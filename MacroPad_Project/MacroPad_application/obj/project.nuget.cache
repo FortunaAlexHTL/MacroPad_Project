@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "dgSpecHash": "yMpq9UK3+pw=",
+  "success": true,
+  "projectFilePath": "/Users/fortunaalex/Documents/Development/MacroPad/MacroPad_application/MacroPad_application.csproj",
+  "expectedPackageFiles": [
+    "/Users/fortunaalex/.nuget/packages/runtime.android-arm.runtime.native.system.io.ports/10.0.12/runtime.android-arm.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.android-arm64.runtime.native.system.io.ports/10.0.12/runtime.android-arm64.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.android-x64.runtime.native.system.io.ports/10.0.12/runtime.android-x64.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.android-x86.runtime.native.system.io.ports/10.0.12/runtime.android-x86.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.linux-arm.runtime.native.system.io.ports/10.0.12/runtime.linux-arm.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.linux-arm64.runtime.native.system.io.ports/10.0.12/runtime.linux-arm64.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.linux-bionic-arm64.runtime.native.system.io.ports/10.0.12/runtime.linux-bionic-arm64.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.linux-bionic-x64.runtime.native.system.io.ports/10.0.12/runtime.linux-bionic-x64.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.linux-musl-arm.runtime.native.system.io.ports/10.0.12/runtime.linux-musl-arm.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.linux-musl-arm64.runtime.native.system.io.ports/10.0.12/runtime.linux-musl-arm64.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.linux-musl-x64.runtime.native.system.io.ports/10.0.12/runtime.linux-musl-x64.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.linux-x64.runtime.native.system.io.ports/10.0.12/runtime.linux-x64.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.maccatalyst-arm64.runtime.native.system.io.ports/10.0.12/runtime.maccatalyst-arm64.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.maccatalyst-x64.runtime.native.system.io.ports/10.0.12/runtime.maccatalyst-x64.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.native.system.io.ports/10.0.12/runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.osx-arm64.runtime.native.system.io.ports/10.0.12/runtime.osx-arm64.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/runtime.osx-x64.runtime.native.system.io.ports/10.0.12/runtime.osx-x64.runtime.native.system.io.ports.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/system.diagnostics.diagnosticsource/10.0.12/system.diagnostics.diagnosticsource.10.0.12.nupkg.sha512",
+    "/Users/fortunaalex/.nuget/packages/system.io.ports/10.0.12/system.io.ports.10.0.12.nupkg.sha512"
+  ],
+  "logs": [
+    {
+      "code": "NU1510",
+      "level": "Warning",
+      "message": "PackageReference System.Diagnostics.DiagnosticSource will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary.",
+      "projectPath": "/Users/fortunaalex/Documents/Development/MacroPad/MacroPad_application/MacroPad_application.csproj",
+      "warningLevel": 1,
+      "filePath": "/Users/fortunaalex/Documents/Development/MacroPad/MacroPad_application/MacroPad_application.csproj",
+      "libraryId": "System.Diagnostics.DiagnosticSource",
+      "targetGraphs": [
+        "net10.0"
+      ]
+    }
+  ]
+}
