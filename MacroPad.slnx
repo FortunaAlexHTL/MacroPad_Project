@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/MacroPad_application/">
+    <Project Path="MacroPad_application/MacroPad_application.csproj" />
+  </Folder>
+
+  <Folder Name="/MacroPad_settings/">
+    <Project Path="MacroPad_settings/MacroPad_settings.csproj" />
+  </Folder>
+</Solution>

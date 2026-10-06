@@ -1,0 +1,124 @@
+# MacroPad_project .gitignore
+
+# C# / .NET
+bin/
+obj/
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+
+*.dll
+*.exe
+*.pdb
+*.cache
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+
+# Visual Studio
+.vs/
+
+# Visual Studio generated files
+*.VC.db
+*.VC.VC.opendb
+*.opendb
+
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+
+# VS Code
+.vscode/
+
+# If you later want to commit VS Code settings,
+# remove ".vscode/" above and use:
+# .vscode/*
+# !.vscode/settings.json
+# !.vscode/tasks.json
+# !.vscode/launch.json
+# !.vscode/extensions.json
+
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+
+# NuGet generated files
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+
+# Arduino generated build files
+build/
+*.hex
+*.elf
+*.eep
+*.bin
+*.map
+
+# Arduino IDE temporary files
+*.ino~
+*.pde~
+
+# Arduino CLI / cache
+.arduino15/
+arduino_build_*/
+arduino_cache_*/
+
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+config.local.*
+settings.local.*
+
+# Serial/debug output
+*.log
+logs/
+
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*.old
+
+
+# Test / coverage output
+TestResults/
+coverage/
+coverage.*
+*.coverage
+*.coveragexml
