@@ -108,12 +108,21 @@ $RECYCLE.BIN/
 
 
 # Temporary files
+tmp/
+temp/
+.tmp/
+.temp/
 *.tmp
 *.temp
 *.bak
 *.swp
 *.swo
 *.old
+
+
+# Local assistant instructions and scratch files
+AGENTS.md
+.codex-tmp/
 
 
 # Test / coverage output
