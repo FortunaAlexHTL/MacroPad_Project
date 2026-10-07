@@ -17,5 +17,18 @@ namespace MacroPad_application
 
             return macros;
         }
+
+        public Config ReadConfig(string path)
+        {
+            string fileContents = File.ReadAllText(path);
+            Config? config = JsonSerializer.Deserialize<Config>(fileContents);
+
+            if (config == null)
+            {
+                throw new InvalidDataException("Config file is invalid");
+            }
+            
+            return config;
+        }
     }
 }

@@ -49,6 +49,40 @@ public class MacController
     [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
     static extern void CGEventSetFlags(IntPtr @event, ulong flags);
 
+    /// <summary>
+    /// Releases an owned native Core Foundation object.
+    /// </summary>
+    /// <param name="handle">A nonzero handle to the object to release.</param>
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern void CFRelease(IntPtr handle);
+
+    /// <summary>
+    /// Creates, posts, and releases a native keyboard event.
+    /// </summary>
+    /// <param name="keyCode">The macOS virtual keycode.</param>
+    /// <param name="flags">The modifier flags attached to the event.</param>
+    /// <param name="isKeyDown">True to press the key; false to release it.</param>
+    private void SendKeyEvent(ushort keyCode, ulong flags, bool isKeyDown)
+    {
+        IntPtr keyboardEvent = CGEventCreateKeyboardEvent(
+            IntPtr.Zero, keyCode, isKeyDown);
+
+        if (keyboardEvent == IntPtr.Zero)
+        {
+            throw new InvalidOperationException("Could not create the keyboard event.");
+        }
+
+        try
+        {
+            CGEventSetFlags(keyboardEvent, flags);
+            CGEventPost(0, keyboardEvent);
+        }
+        finally
+        {
+            CFRelease(keyboardEvent);
+        }
+    }
+
 
     /// <summary>
     /// Creates and posts a key-press event with the supplied modifier flags.
@@ -57,11 +91,7 @@ public class MacController
     /// <param name="flags">The combined modifier flags to attach to the event, or zero for none.</param>
     private void KeyDown(ushort keyCode, ulong flags)
     {
-        IntPtr keyDown = CGEventCreateKeyboardEvent(
-            IntPtr.Zero, keyCode, true);
-
-        CGEventSetFlags(keyDown, flags);
-        CGEventPost(0, keyDown);
+        SendKeyEvent(keyCode, flags, true);
     }
 
     /// <summary>
@@ -71,11 +101,7 @@ public class MacController
     /// <param name="flags">The combined modifier flags to attach to the event, or zero for none.</param>
     private void KeyUp(ushort keyCode, ulong flags)
     {
-        IntPtr keyUp = CGEventCreateKeyboardEvent(
-            IntPtr.Zero, keyCode, false);
-
-        CGEventSetFlags(keyUp, flags);
-        CGEventPost(0, keyUp);
+        SendKeyEvent(keyCode, flags, false);
     }
 
     /// <summary>

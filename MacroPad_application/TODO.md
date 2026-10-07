@@ -33,7 +33,7 @@ Application paths already belong to individual macros; do not add an `Applicatio
 
 - [ ] Validate loaded macros: reject null entries, duplicate button codes, unsupported action types, missing keyboard arrays, invalid keycodes, and missing application paths. Validate the full key sequence before pressing modifiers.
 - [ ] Report unsupported action types explicitly in `ExecuteMacro`.
-- [ ] Check native keyboard-event creation for failure and release created events with `CFRelease` after use, including on error paths. Address this before continuous operation.
+- [x] Check native keyboard-event creation for failure and release created events with `CFRelease` after use, including on error paths.
 - [ ] Ensure modifiers are released if execution fails after pressing them.
 - [ ] Use `ProcessStartInfo.ArgumentList` for configured application paths and check the `open` process's result so failed launches are reported.
 - [ ] Restore the serial connection using the configured port and baud rate. Read a new message before executing each macro; do not repeat a fixed test action in an unrestricted loop.

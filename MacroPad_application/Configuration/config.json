@@ -1,5 +1,5 @@
 {
-  "SerialPort": "/dev/cu.usbmodem11401",
+  "SerialPort": "/dev/cu.usbmodem1401",
   "BaudRate": 115200,
   "MacrosFile": "macros.json"
 }
