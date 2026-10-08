@@ -1,8 +1,10 @@
 # MacroPad settings TODOs
 
-Begin settings-app development after the [companion app's JSON configuration and Arduino integration](../MacroPad_application/TODO.md). The settings app currently remains a `Hello, World!` placeholder. Finish the project with a shared macOS installer distributed through GitHub Releases.
+The [companion app](../MacroPad_application/TODO.md) loads JSON from Application Support and discovers MacroPads by handshake; the user reports single-board operation working. Complete its single-board connection checks and configuration validation before developing the settings editor. As of 2026-10-08, the settings app remains a `Hello, World!` placeholder; no editor features below are complete. Finish the project with a shared macOS installer distributed through GitHub Releases.
 
-The agreed data model uses `config.json` for `SerialPort`, `BaudRate`, and `MacrosFile`, plus `macros.json` for `Macro` records. Each macro contains its button code, action type, variable-length keys, and nullable `ApplicationPath`. Application paths are stored directly in macros; no application-identifier table or `-1` padding is needed.
+The implemented data model uses a `Config` record for `SerialPort`, `BaudRate`, and `MacrosFile`, plus `Macro` records with the JSON property names `buttonCode`, `ActionType`, `keys`, and `ApplicationPath`. Application paths are stored directly in macros; no application-identifier table or `-1` padding is needed. The companion app's `ReadConfig` and `ReadMacros` methods deserialize these files, and `Main` resolves `MacrosFile` relative to the configuration file's directory. Validation of the deserialized values remains unfinished. `Config.SerialPort` is currently unused because discovery supplies the port; settle the configuration format before building an editor for it. Both apps should use `~/Library/Application Support/MacroPad/`. The companion app creates that directory but does not yet supply missing JSON files.
+
+`Arduino(Port, Name)` records hold discovered devices. Mega firmware supports `WHO_ARE_YOU?` and `SET_NAME:` with EEPROM-backed names; the C# discovery code reads names, but there is no settings-side rename workflow yet.
 
 ## 1. Start development of the settings app
 
@@ -15,15 +17,20 @@ The agreed data model uses `config.json` for `SerialPort`, `BaudRate`, and `Macr
 - [ ] Allow users to choose a keyboard shortcut or an application launch for each button.
 - [ ] Allow users to edit key sequences and modifiers, using the lengths and modifier codes supported by the companion app.
 - [ ] Allow users to select application targets and save their paths directly in `ApplicationPath`.
-- [ ] List available serial ports and let the user choose the Arduino port rather than assuming the first port is correct.
-- [ ] Allow users to configure the port, baud rate, and macro-file location without changing source code.
+- [ ] List boards confirmed by the `MACROPAD:<name>` handshake, showing their names and current ports; let the user select a board if several are connected.
+- [ ] Let the user name or rename a selected board with `SET_NAME:<name>`, checking the acknowledgement before reporting success. Enforce the firmware's 1-24 ASCII letters, digits, underscores, or hyphens.
+- [ ] Handle `UNNAMED` and duplicate names during setup; do not assign permanent names from the order of discovered ports.
+- [ ] Coordinate serial ownership with the companion app so both apps do not try to use the same port at once.
+- [ ] Expose only configuration choices retained by the companion app. A changing USB port should be discovered, not stored as a permanent device identity.
+- [ ] Defer per-board macro profiles until multiple-board support and the device-to-profile association are defined.
 
 ## 2. Save settings and verify integration
 
-- [ ] Validate input before saving, including unique button codes, supported action types, keycodes, required application paths, file locations, and serial settings.
+- [ ] Validate input before saving, including unique button codes, supported action types, keycodes, required application paths, file locations, retained serial settings, and device names.
+- [ ] Present all detected validation problems together and use the companion app's agreed validation rules. Log file-reading/saving failures and allow retry after correction without overwriting valid settings.
 - [ ] Serialize records back to readable, indented JSON. Preserve the agreed property names, use `null` for unused application paths, and use an empty key array for application actions.
 - [ ] Preserve existing valid settings when an edit is cancelled or saving fails; provide clear success and error messages.
-- [ ] Explain when saved settings take effect and provide the agreed restart or reload workflow.
+- [ ] Explain that changes currently require restarting the companion app; coordinate any future reload feature with it.
 - [ ] Verify that loading and saving unchanged settings preserves their meaning.
 - [ ] Check an edited keyboard shortcut and application launch end to end with the companion app and connected board.
 

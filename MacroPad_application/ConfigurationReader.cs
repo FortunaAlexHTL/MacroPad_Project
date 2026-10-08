@@ -1,3 +1,5 @@
+// Description: Reads general configuration and macro records from JSON files.
+
 using System.Text.Json;
 using MacroPad_application.Models;
 
@@ -5,6 +7,17 @@ namespace MacroPad_application
 {
     public class ConfigurationReader
     {
+        /// <summary>
+        /// Reads a JSON array of macro definitions and converts it into macro records.
+        /// </summary>
+        /// <param name="path">The file path; relative paths use the current working directory.</param>
+        /// <returns>The deserialized macro array, which can be empty.</returns>
+        /// <exception cref="InvalidDataException">The JSON deserializes to null.</exception>
+        /// <exception cref="JsonException">The JSON cannot be converted into a macro array.</exception>
+        /// <remarks>
+        /// File-reading errors propagate to the caller. Individual records and their values
+        /// are not validated by this method.
+        /// </remarks>
         public Macro[] ReadMacros(string path)
         {
             string fileContents = File.ReadAllText(path);
@@ -18,6 +31,17 @@ namespace MacroPad_application
             return macros;
         }
 
+        /// <summary>
+        /// Reads serial connection settings and the macro-file location from a JSON file.
+        /// </summary>
+        /// <param name="path">The file path; relative paths use the current working directory.</param>
+        /// <returns>The deserialized configuration record.</returns>
+        /// <exception cref="InvalidDataException">The JSON deserializes to null.</exception>
+        /// <exception cref="JsonException">The JSON cannot be converted into a configuration record.</exception>
+        /// <remarks>
+        /// File-reading errors propagate to the caller. Configuration values are not validated.
+        /// The caller must resolve MacrosFile relative to the configuration file's directory.
+        /// </remarks>
         public Config ReadConfig(string path)
         {
             string fileContents = File.ReadAllText(path);

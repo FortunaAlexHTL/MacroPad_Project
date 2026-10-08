@@ -1,5 +1,5 @@
-// Description: Sends macOS keyboard events through CoreGraphics and provides
-// helper methods for recognizing modifier keys and their event flags.
+// Description: Executes keyboard macros through CoreGraphics and opens macOS
+// applications, releasing native keyboard events after they are posted.
 
 namespace MacroPad_application.Controllers;
 
@@ -21,6 +21,7 @@ public class MacController
     /// <param name="virtualKey">The macOS virtual keycode of the key.</param>
     /// <param name="keyDown">True for a key press; false for a key release.</param>
     /// <returns>A handle to the created event, or IntPtr.Zero if creation fails.</returns>
+    /// <remarks>The caller owns the returned event and must release a nonzero handle with CFRelease.</remarks>
     [DllImport(
         "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
     static extern IntPtr CGEventCreateKeyboardEvent(
@@ -62,6 +63,11 @@ public class MacController
     /// <param name="keyCode">The macOS virtual keycode.</param>
     /// <param name="flags">The modifier flags attached to the event.</param>
     /// <param name="isKeyDown">True to press the key; false to release it.</param>
+    /// <exception cref="InvalidOperationException">CoreGraphics could not create the event.</exception>
+    /// <remarks>
+    /// Releases the created event in a finally block, including when processing throws an exception.
+    /// Releasing the event frees native memory; a separate key-release event is needed to release the key.
+    /// </remarks>
     private void SendKeyEvent(ushort keyCode, ulong flags, bool isKeyDown)
     {
         IntPtr keyboardEvent = CGEventCreateKeyboardEvent(
@@ -89,6 +95,7 @@ public class MacController
     /// </summary>
     /// <param name="keyCode">The macOS virtual keycode of the key to press.</param>
     /// <param name="flags">The combined modifier flags to attach to the event, or zero for none.</param>
+    /// <exception cref="InvalidOperationException">CoreGraphics could not create the event.</exception>
     private void KeyDown(ushort keyCode, ulong flags)
     {
         SendKeyEvent(keyCode, flags, true);
@@ -99,6 +106,7 @@ public class MacController
     /// </summary>
     /// <param name="keyCode">The macOS virtual keycode of the key to release.</param>
     /// <param name="flags">The combined modifier flags to attach to the event, or zero for none.</param>
+    /// <exception cref="InvalidOperationException">CoreGraphics could not create the event.</exception>
     private void KeyUp(ushort keyCode, ulong flags)
     {
         SendKeyEvent(keyCode, flags, false);
@@ -152,6 +160,22 @@ public class MacController
         return flag;
     }
         
+    /// <summary>
+    /// Executes a keyboard macro or requests an application launch according to its action type.
+    /// </summary>
+    /// <param name="macro">
+    /// The selected macro. Keyboard actions require a non-null key array with values that fit
+    /// in ushort; application actions require a nonblank application path.
+    /// </param>
+    /// <remarks>
+    /// Recognizes the exact action types "Keyboard" and "Application"; other types perform no action.
+    /// Keyboard actions press modifiers first, send ordinary keys in order, then release modifiers
+    /// in reverse order. Application actions invoke macOS open and report a blank path to the console,
+    /// but do not check the launch result. Errors propagate to the caller; releasing held modifiers
+    /// after an execution error is not guaranteed.
+    /// </remarks>
+    /// <exception cref="OverflowException">A keyboard code is outside the ushort range.</exception>
+    /// <exception cref="InvalidOperationException">CoreGraphics could not create a keyboard event.</exception>
     public void ExecuteMacro(Macro macro)
     {
         ulong modifierFlags = 0;
