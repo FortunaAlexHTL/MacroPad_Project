@@ -120,3 +120,18 @@ No firmware upload, live serial session, keyboard injection, or application laun
 Use the implemented-feature sections above for the project description, architecture, wiring, protocol, and data model. Use the active TODOs for limitations rather than presenting planned features as complete. Keep a clear distinction between the local five-mapping example and future distributable defaults.
 
 The existing `.gitignore` excludes build output, IDE state, temporary files, and local `AGENTS.md`. Preserve the demonstration video and attribution. The installer remains a future shared `.pkg`/GitHub Release milestone; there is no settings editor or installer to advertise yet.
+
+
+## Follow-up: controller separation and multiple-board implementation
+
+This follow-up supersedes the earlier single-board source description; the original review above is retained as a historical snapshot.
+
+- Discovery now lives in `ArduinoController.GetArduinos`; `MacController` has been renamed `MacOSController`; configuration-directory resolution moved to `ConfigurationReader`.
+- `Config` now contains only `BaudRate` and `MacrosFile`.
+- `Macro` now uses `ArduinoDeviceName`, `ButtonCode`, `ActionType`, `Keys`, and `ApplicationPath`. `FindMacro` matches both device name and button code.
+- Connections are allocated unconditionally, opened independently with a per-board catch, and failed objects are disposed. Cleanup skips null entries. Successful opens report the board name.
+- The reader now visits every connection, sets a 500 ms timeout, and passes each board's name into macro lookup. This is implemented polling, not yet reliable multiple-board execution: stale data can cross board boundaries, the last opening result controls global listening, malformed nonnumeric messages can throw, and one failed board restarts the whole group.
+- Discovery includes up to five attempts for unrecognized replies. Exceptions still exit those attempts, and every attempt reopens the port. Graceful cancellation and a single-connection identity-read deadline have not been implemented despite earlier checklist marks.
+- The current companion project builds with zero warnings/errors. No live hardware session or macro execution was performed for this follow-up.
+
+Remaining fixes are ordered in the refreshed TODO files, beginning with resetting received data separately for each board.

@@ -2,32 +2,37 @@
 
 Reviewed 2026-10-09. Only unfinished work is listed here, in recommended order. [Completed work and review notes](../COMPLETED_WORK_2026-10-09.md) and the [original TODO backup](../TODO_BACKUP_2026-10-09.md) are preserved in the repository root.
 
-## 1. Fix the current single-board connection flow first
+## 1. Fix the multiple-board reading loop, one step at a time
 
-- [x] Set `isListening` to true only after the selected connection opens successfully. The array-length check currently overwrites the false value set by the opening-error catch.
-- [x] Make cleanup safe after a partially completed opening loop: dispose every initialized connection, including failed ones, and skip null array entries. A failure before the last board currently leaves entries that make the next cleanup throw.
-- [x] Open every board discovered.
-- [x] Report “connected” only after the listening connection opens. The message in `GetArduinos` currently describes discovery, whose connections have already been closed.
-- [ ] Make startup waits and retry delays deliberate. There is now a two-second wait after every discovery pass, plus one second when no boards are found; replace this scattered timing with clear startup/retry behavior. The end-of-scan delay occurs before reopening and does not wait for any reset caused by reopening.
-- [ ] Add graceful cancellation of searching and listening, and guaranteed cleanup on exit. Account for `ReadLine()` blocking while the board is idle; a loop flag alone cannot interrupt it. If finite read timeouts are introduced, treat an idle timeout separately from a broken connection.
+- [x] **First: reset `receivedData` inside the loop for each board.** It is currently reset only before the loop. After board A supplies a message, a timeout or read failure on board B leaves A's message in the variable and can execute it using B's name.
+- [x] Set `isListening` according to whether any connection is open, rather than overwriting it after each opening attempt. Currently the last board's result wins: a failed last connection prevents listening to earlier successful ones.
+- [x] Skip null, disposed, or closed connections when reading. Handle the failed connection separately so one disconnected board does not force all healthy boards to close and restart discovery.
+- [x] Parse nonnumeric messages safely before indexing fields. `receivedData.Split(':')[1]` currently throws for text without a colon. Distinguish identity/status replies from malformed button messages by prefix and field count.
+- [x] Reduce waiting behind idle boards. Each sequential `ReadLine()` can currently wait 500 ms, so an active board can be delayed by the others. Preserve partial lines per board if moving to reading available data; receiving some bytes does not guarantee a full line.
+- [ ] Add discovery of newly connected boards while other boards remain active. Discovery currently runs only when global listening stops; preserve healthy connections during rescans.
+- [ ] Add graceful cancellation of both loops and guaranteed cleanup on exit. A finite read timeout helps responsiveness but does not itself provide an exit path.
 
-## 2. Finish discovery and recovery handling
+## 2. Finish discovery and verify multiple-board recovery
 
-- [ ] Read until a valid identity reply arrives or a total discovery deadline expires. A button code arriving first currently causes the board to be missed; unrelated lines must not keep discovery running indefinitely.
-- [ ] Validate the returned name against the firmware's 1-24 ASCII letters, digits, underscores, or hyphens. The existing prefix/field-count/nonblank checks do not enforce those rules.
-- [ ] Define whether persistent connection failures use bounded retries or cancellable background searching, and give clear status messages without replaying previous macros.
-- [ ] Verify startup without a board, connection after startup, an occupied port, unplugging between discovery and reopening, disconnection during listening, and successful use after reconnecting.
-- [ ] Verify missing/malformed replies, a button press during discovery, and partial opening failures with more than one candidate. Confirm that failed connections do not remain occupied.
+- [ ] Make the discovery retries match the intended behavior: the five-attempt loop currently retries malformed replies, but timeout/access/I/O exceptions exit the whole attempt loop because the catch is outside it. Define which failures should retry and which should skip the port.
+- [ ] Read past button messages on the same open discovery connection until identification succeeds or a total deadline expires. Reopening for each attempt can reset the board and adds startup delay.
+- [ ] Validate discovered names against the firmware's 1-24 ASCII letters, digits, underscores, or hyphens; reject or resolve duplicate names and `UNNAMED` boards before using names to select macros.
+- [ ] Make startup/retry timing explicit. Discovery still sleeps two seconds after every pass, and reopening for normal listening can reset the board again. Distinguish startup waits, empty-scan delays, and error retry delays.
+- [ ] Update `ArduinoController.GetArduinos` documentation to describe the new attempt loop and its actual exception behavior.
+- [ ] Verify two distinct board names using the same button code: only the sending board's macro should run, including when another board is idle, times out, or disconnects.
+- [ ] Verify failed-first/failed-last opening attempts, simultaneous presses, partial messages, malformed input without a colon, and connecting another board while listening. The earlier live test used one Mega and does not verify this revised loop.
+- [ ] Recheck no-board startup, occupied ports, unplugging between discovery and opening, and reconnecting at a changed path against the current code. Keep user-reported checks distinct from verified multiple-board cases.
 
 ## 3. Make configuration portable and validate it before execution
 
 - [ ] Add distributable default JSON files to the source tree and supply them to `~/Library/Application Support/MacroPad/` only when missing. Directory creation alone does not make a fresh installation runnable; preserve existing settings.
-- [ ] Settle the configuration format before building the editor. Remove the unused `Config.SerialPort` field and decide whether `BaudRate` and `MacrosFile` remain configurable; update examples and readers together.
+- [ ] Document the retained `Config(BaudRate, MacrosFile)` format for the editor and default files. The unused `SerialPort` property has already been removed.
 - [ ] Validate configuration fields: require a usable macro-file path and a baud rate matching the firmware's `115200`. Decide and document whether absolute macro-file paths remain allowed.
 - [ ] Handle missing/unreadable files, inaccessible directories, invalid JSON, and invalid records with useful startup messages. Stop normal operation until configuration is corrected, then allow an explicit retry or restart.
-- [ ] Validate every macro: reject null entries, duplicate/unsupported button codes, unsupported action types, missing or unusable key arrays, unsupported keycodes, and missing application targets. Require a mapping for each of the five firmware codes, or explicitly define an unassigned-button option in both apps.
+- [ ] Validate every macro: reject null entries, duplicate `(ArduinoDeviceName, ButtonCode)` pairs, unsupported button codes, missing/invalid device names, unsupported action types, missing or unusable key arrays, unsupported keycodes, and missing application targets. Require the five firmware mappings for each configured board, or explicitly define an unassigned-button option in both apps. The same button code on two differently named boards is valid.
 - [ ] Collect validation problems so the user can fix them together. Check the entire key sequence before pressing any key; fitting into `ushort` alone does not establish a valid macOS keycode.
-- [ ] Add repeatable checks for malformed/missing fields, null entries, duplicate codes, unknown action types, and out-of-range values, alongside valid and unknown-code lookups. Keep these checks independent of real keyboard output.
+- [ ] Add repeatable checks for malformed/missing fields, null entries, duplicate device/button pairs, unknown action types, and out-of-range values. Check lookup by both device name and button code without producing real keyboard events.
+- [ ] Define migration or a clear validation error for older JSON using `buttonCode`/`keys` without `ArduinoDeviceName`. Current properties are `ArduinoDeviceName`, `ButtonCode`, `ActionType`, `Keys`, and `ApplicationPath`; default deserialization does not silently migrate old casing correctly.
 
 ## 4. Finish action failure handling and diagnostics
 
@@ -40,22 +45,22 @@ Reviewed 2026-10-09. Only unfinished work is listed here, in recommended order. 
 ## 5. Finish firmware behavior and its hardware checks
 
 - [ ] Add button debouncing while preserving press-edge behavior and the existing pin/code assignments. A held button should not intentionally repeat.
-- [ ] Verify all five button codes, rapid presses, holding/releasing buttons, and serial commands arriving while buttons are used on the physical Mega 2560.
-- [ ] Verify device-name persistence after unplugging, invalid/empty/maximum-length names, overlong-command rejection, and acceptance of the next valid command. Firmware implementations exist; these physical checks still need confirmation.
+- [ ] Investigate the missed button-5 messages observed during live testing: inspect the switch and pin 2/GND connections, then repeat controlled presses. The cause is not established. Also verify rapid presses, holding/releasing buttons, and serial commands during button use.
+- [ ] Verify a valid 24-character name and an actual rename/save cycle with restoration of the original name. The earlier live test already verified existing-name retention across USB reconnect, invalid-name rejection, oversized-command recovery, fragmented commands, and repeated identification; do not treat those as untested.
 
 ## 6. Integrate the settings app and correct project documentation
 
 - [ ] Agree on JSON property names and validation rules with the [settings app](../MacroPad_settings/TODO.md); keep file locations consistent and choose one owner of a serial connection during setup.
 - [ ] Document restart-after-save behavior, or implement an explicit reload mechanism. Verify an edited shortcut and application action end to end after settings are saved.
 - [ ] Fix the solution's settings-project path casing: `MacroPad_settings/MacroPad_settings.csproj` must match the tracked `MacroPad_settings/MacroPad_Settings.csproj`.
-- [ ] Rewrite README setup and examples using the completed-work notes: JSON, Application Support, automatic discovery, records/controllers, supported modifiers, and `onHardwareProgram/MacroPad/MacroPad.ino`. Remove broken INI links and old hardcoded-path instructions; describe recovery limitations accurately.
+- [ ] Rewrite README setup and examples using the completed-work notes: JSON, Application Support, automatic discovery, the new ArduinoController/MacOSController structure and device-specific JSON records, supported modifiers, and `onHardwareProgram/MacroPad/MacroPad.ino`. Remove broken INI links and old hardcoded-path instructions; describe recovery limitations accurately.
 - [ ] Update `onHardwareProgram/SerialProtocol.md` for the current sketch location and implemented C# discovery. Keep remaining setup/rename integration clearly identified.
 
-## 7. Later extension: multiple boards
+## 7. Complete device-specific settings integration
 
-- [ ] Define stable board selection and handling of duplicate names or `UNNAMED` devices with the settings app. Never assign persistent names from scan order.
-- [ ] Define how each board selects its macro profile; current lookup uses only button code in one shared `Macro[]`.
-- [ ] Read multiple boards without letting one idle board's blocking read hold up the others. Define how one board disconnecting affects the remaining connections.
+- [ ] Define how renaming a board updates the `ArduinoDeviceName` values in its saved macros, so existing mappings do not stop matching after a rename.
+- [ ] Update `FindMacro` summaries and the empty `arduinoDeviceName` parameter description to explain matching both fields; include the device name in missing-mapping diagnostics.
+- [ ] Keep device records and serial connections associated with the same board when adding/removing connections. Avoid relying on independently rearranged array indexes.
 
 ## 8. Final milestone: installer and GitHub Release
 

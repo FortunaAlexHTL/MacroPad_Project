@@ -5,9 +5,9 @@ Reviewed 2026-10-09. Only unfinished work is listed here. Begin after the compan
 ## 1. First milestone: edit one mapping and save it
 
 - [ ] Replace `Hello, World!` with a small console menu; keep a graphical interface as a later decision.
-- [ ] Load configuration and macros from the same Application Support location as the companion app, resolving a relative macro path against that directory. Follow the agreed configuration format rather than exposing the unused serial-port setting.
-- [ ] Display the action assigned to each of the five buttons.
-- [ ] Allow editing one button as either a keyboard shortcut or an application launch. Store the selection in memory before saving; allow cancellation.
+- [ ] Load configuration and macros from the same Application Support location as the companion app, resolving a relative macro path against that directory. Follow the agreed configuration format using the current `Config(BaudRate, MacrosFile)` fields.
+- [ ] Select a configured device by name and display its five button mappings.
+- [ ] Allow editing one button for the selected device as either a keyboard shortcut or an application launch. Store the selection in memory before saving; allow cancellation.
 - [ ] Validate the edited configuration using the companion app's rules and show all detected problems together.
 - [ ] Save readable, indented JSON with the agreed property-name casing. Preserve the last valid file if writing fails, and do not overwrite settings after a cancelled edit.
 - [ ] Show success/error messages and explain that the companion app currently needs restarting after a save.
@@ -20,7 +20,7 @@ Reviewed 2026-10-09. Only unfinished work is listed here. Begin after the compan
 - [ ] Let users select application targets and save their paths directly in `ApplicationPath`; validate missing targets and paths containing spaces.
 - [ ] Handle missing/unreadable files and malformed JSON without destroying the existing configuration. Log read/save failures and allow correction followed by retry.
 - [ ] Expose only general settings retained by the companion app. Coordinate default-file creation and preserve existing user files.
-- [ ] Keep current JSON names (`buttonCode`, `ActionType`, `keys`, `ApplicationPath`) unless both apps and examples are intentionally migrated together. Use empty key arrays for application actions and null application paths for keyboard actions.
+- [ ] Use current JSON names (`ArduinoDeviceName`, `ButtonCode`, `ActionType`, `Keys`, `ApplicationPath`); migrate or clearly reject the older lowercase format. Use empty key arrays for application actions and null application paths for keyboard actions.
 
 ## 3. Device setup and naming
 
@@ -29,7 +29,8 @@ Reviewed 2026-10-09. Only unfinished work is listed here. Begin after the compan
 - [ ] Send `SET_NAME:<name>` and confirm the matching `OK:<name>` reply before reporting success. Handle `ERROR:` replies, timeouts, disconnects, and button messages arriving between command replies.
 - [ ] Enforce the firmware's 1-24 ASCII letters, digits, underscores, or hyphens. Handle `UNNAMED` and duplicate names without identifying boards by discovery order.
 - [ ] Verify that a saved name is reported again after unplugging and reconnecting.
-- [ ] Add per-board macro profiles only after the companion app defines device identity, profile association, and multiple-board listening.
+- [ ] Save and validate mappings by `(ArduinoDeviceName, ButtonCode)`: equal button codes on different boards are allowed, but duplicate pairs are not. The companion app already uses this lookup; its multiple-board reading loop still needs fixes.
+- [ ] When renaming a board, coordinate updating its saved macro names and handle a failed save or rename without claiming both succeeded.
 
 ## 4. Installer integration
 

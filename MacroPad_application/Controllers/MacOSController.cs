@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using System.Diagnostics;
 using Models;
 
-public class MacController
+public class MacOSController
 {
     const ulong CommandFlag = 0x00100000;
     const ulong ShiftFlag = 0x00020000;
@@ -22,8 +22,7 @@ public class MacController
     /// <param name="keyDown">True for a key press; false for a key release.</param>
     /// <returns>A handle to the created event, or IntPtr.Zero if creation fails.</returns>
     /// <remarks>The caller owns the returned event and must release a nonzero handle with CFRelease.</remarks>
-    [DllImport(
-        "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
     static extern IntPtr CGEventCreateKeyboardEvent(
         IntPtr source,
         ushort virtualKey,
@@ -35,8 +34,7 @@ public class MacController
     /// </summary>
     /// <param name="tap">The location in the event stream where the event is posted.</param>
     /// <param name="event">The handle of the event to post.</param>
-    [DllImport(
-        "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
     static extern void CGEventPost(
         uint tap,
         IntPtr @event
@@ -192,7 +190,7 @@ public class MacController
         }
         else if (macro.ActionType == "Keyboard")
         {
-            int[] receivedMacro = macro.keys;
+            int[] receivedMacro = macro.Keys;
             
             for (int i = 0; i < receivedMacro.Length; i++)
             {

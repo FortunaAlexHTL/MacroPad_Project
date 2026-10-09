@@ -54,5 +54,23 @@ namespace MacroPad_application
             
             return config;
         }
+        
+        /// <summary>
+        /// Creates the current user's MacroPad configuration directory if it does not exist.
+        /// </summary>
+        /// <returns>The path to Library/Application Support/MacroPad under the user's home directory.</returns>
+        /// <remarks>Creates the directory only; configuration files must already be supplied separately.</remarks>
+        public string GetConfigurationDirectoryPath()
+        {
+            string homeDirectory = Environment.GetFolderPath(
+                Environment.SpecialFolder.UserProfile);
+        
+            string configurationDirectory = Path.Combine(
+                homeDirectory, "Library", "Application Support", "MacroPad");
+
+            Directory.CreateDirectory(configurationDirectory);
+        
+            return configurationDirectory;
+        }
     }
 }
