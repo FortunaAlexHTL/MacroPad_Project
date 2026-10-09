@@ -1,7 +1,7 @@
 namespace MacroPad_application.Models;
 
 public record Config(
-    string SerialPort,
+    int NumberOfButtons,
     int BaudRate,
     string MacrosFile
     );

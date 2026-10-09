@@ -1,47 +1,43 @@
-# MacroPad settings TODOs
+# MacroPad settings — remaining work
 
-The [companion app](../MacroPad_application/TODO.md) loads JSON from Application Support and discovers MacroPads by handshake; the user reports single-board operation working. Complete its single-board connection checks and configuration validation before developing the settings editor. As of 2026-10-08, the settings app remains a `Hello, World!` placeholder; no editor features below are complete. Finish the project with a shared macOS installer distributed through GitHub Releases.
+Reviewed 2026-10-09. Only unfinished work is listed here. Begin after the companion app's connection and configuration-validation fixes. [Completed work and review notes](../COMPLETED_WORK_2026-10-09.md) and the [original TODO backup](../TODO_BACKUP_2026-10-09.md) are in the repository root.
 
-The implemented data model uses a `Config` record for `SerialPort`, `BaudRate`, and `MacrosFile`, plus `Macro` records with the JSON property names `buttonCode`, `ActionType`, `keys`, and `ApplicationPath`. Application paths are stored directly in macros; no application-identifier table or `-1` padding is needed. The companion app's `ReadConfig` and `ReadMacros` methods deserialize these files, and `Main` resolves `MacrosFile` relative to the configuration file's directory. Validation of the deserialized values remains unfinished. `Config.SerialPort` is currently unused because discovery supplies the port; settle the configuration format before building an editor for it. Both apps should use `~/Library/Application Support/MacroPad/`. The companion app creates that directory but does not yet supply missing JSON files.
+## 1. First milestone: edit one mapping and save it
 
-`Arduino(Port, Name)` records hold discovered devices. Mega firmware supports `WHO_ARE_YOU?` and `SET_NAME:` with EEPROM-backed names; the C# discovery code reads names, but there is no settings-side rename workflow yet.
+- [ ] Replace `Hello, World!` with a small console menu; keep a graphical interface as a later decision.
+- [ ] Load configuration and macros from the same Application Support location as the companion app, resolving a relative macro path against that directory. Follow the agreed configuration format rather than exposing the unused serial-port setting.
+- [ ] Display the action assigned to each of the five buttons.
+- [ ] Allow editing one button as either a keyboard shortcut or an application launch. Store the selection in memory before saving; allow cancellation.
+- [ ] Validate the edited configuration using the companion app's rules and show all detected problems together.
+- [ ] Save readable, indented JSON with the agreed property-name casing. Preserve the last valid file if writing fails, and do not overwrite settings after a cancelled edit.
+- [ ] Show success/error messages and explain that the companion app currently needs restarting after a save.
+- [ ] Verify loading and saving without edits preserves the mappings, then verify one edited shortcut and one application launch on the connected board.
 
-## 1. Start development of the settings app
+## 2. Complete the editing workflow
 
-- [ ] Replace the `Hello, World!` placeholder with an initial settings workflow; decide whether the first interface will be a console menu or a graphical app.
-- [ ] Keep the existing C# coding style: explicit types, arrays, simple loops, and small helper methods. Do not use `break` to exit loops.
-- [ ] Load `config.json` and deserialize `macros.json` into records, matching the companion app's property names and validation rules.
-- [ ] Resolve the macro-file path relative to the configuration file and use the same user configuration location as the companion app.
-- [ ] Read the keycode reference from its configured file location and show readable key names when editing shortcuts.
-- [ ] Display the current action assigned to each of the five buttons.
-- [ ] Allow users to choose a keyboard shortcut or an application launch for each button.
-- [ ] Allow users to edit key sequences and modifiers, using the lengths and modifier codes supported by the companion app.
-- [ ] Allow users to select application targets and save their paths directly in `ApplicationPath`.
-- [ ] List boards confirmed by the `MACROPAD:<name>` handshake, showing their names and current ports; let the user select a board if several are connected.
-- [ ] Let the user name or rename a selected board with `SET_NAME:<name>`, checking the acknowledgement before reporting success. Enforce the firmware's 1-24 ASCII letters, digits, underscores, or hyphens.
-- [ ] Handle `UNNAMED` and duplicate names during setup; do not assign permanent names from the order of discovered ports.
-- [ ] Coordinate serial ownership with the companion app so both apps do not try to use the same port at once.
-- [ ] Expose only configuration choices retained by the companion app. A changing USB port should be discovered, not stored as a permanent device identity.
-- [ ] Defer per-board macro profiles until multiple-board support and the device-to-profile association are defined.
+- [ ] Decide how the installed app locates its bundled keycode reference and load it. Show readable key names while preserving numeric macOS keycodes; ensure the reference covers every key the editor offers.
+- [ ] Support variable-length key sequences and the modifier codes supported by the companion app. Explain that ordinary keys run in sequence under the modifiers.
+- [ ] Let users select application targets and save their paths directly in `ApplicationPath`; validate missing targets and paths containing spaces.
+- [ ] Handle missing/unreadable files and malformed JSON without destroying the existing configuration. Log read/save failures and allow correction followed by retry.
+- [ ] Expose only general settings retained by the companion app. Coordinate default-file creation and preserve existing user files.
+- [ ] Keep current JSON names (`buttonCode`, `ActionType`, `keys`, `ApplicationPath`) unless both apps and examples are intentionally migrated together. Use empty key arrays for application actions and null application paths for keyboard actions.
 
-## 2. Save settings and verify integration
+## 3. Device setup and naming
 
-- [ ] Validate input before saving, including unique button codes, supported action types, keycodes, required application paths, file locations, retained serial settings, and device names.
-- [ ] Present all detected validation problems together and use the companion app's agreed validation rules. Log file-reading/saving failures and allow retry after correction without overwriting valid settings.
-- [ ] Serialize records back to readable, indented JSON. Preserve the agreed property names, use `null` for unused application paths, and use an empty key array for application actions.
-- [ ] Preserve existing valid settings when an edit is cancelled or saving fails; provide clear success and error messages.
-- [ ] Explain that changes currently require restarting the companion app; coordinate any future reload feature with it.
-- [ ] Verify that loading and saving unchanged settings preserves their meaning.
-- [ ] Check an edited keyboard shortcut and application launch end to end with the companion app and connected board.
+- [ ] Coordinate port ownership with the companion app so both apps do not try to use the same board simultaneously.
+- [ ] Display devices confirmed by the `MACROPAD:<name>` handshake, including their current port paths, and let the user select the board to configure.
+- [ ] Send `SET_NAME:<name>` and confirm the matching `OK:<name>` reply before reporting success. Handle `ERROR:` replies, timeouts, disconnects, and button messages arriving between command replies.
+- [ ] Enforce the firmware's 1-24 ASCII letters, digits, underscores, or hyphens. Handle `UNNAMED` and duplicate names without identifying boards by discovery order.
+- [ ] Verify that a saved name is reported again after unplugging and reconnecting.
+- [ ] Add per-board macro profiles only after the companion app defines device identity, profile association, and multiple-board listening.
 
-## 3. Final project milestone: full installer
+## 4. Installer integration
 
-This is the same shared `.pkg` installer and GitHub Release milestone tracked in the [companion app TODOs](../MacroPad_application/TODO.md#5-final-project-milestone-installer-and-github-release).
+Use the shared [installer and release plan](../MacroPad_application/TODO.md#8-final-milestone-installer-and-github-release).
 
-- [ ] Include the settings app and its keycode reference in the installer alongside the companion app.
-- [ ] Provide first-run setup for the Arduino connection, file locations, initial button assignments, and application targets.
-- [ ] Create initial JSON files under `~/Library/Application Support/MacroPad/` when needed, without overwriting an existing user's settings.
-- [ ] Guide users through connecting the board, preparing its firmware, granting macOS Accessibility permission, and testing their first button.
-- [ ] Make it easy to reopen the settings app after installation and explain how to start the companion app.
-- [ ] Verify that a new user can install, configure, and use the MacroPad without editing source files or opening an IDE for either C# app.
-- [ ] Include first-run setup instructions in the GitHub Release notes alongside the installer downloads.
+- [ ] Package the settings app and keycode reference alongside the companion app so users can launch both without an IDE.
+- [ ] Provide first-run setup for a discovered board, initial mappings, application targets, and any retained file-location choices.
+- [ ] Coordinate creation of missing default JSON files in `~/Library/Application Support/MacroPad/` without overwriting existing settings or upgrade data.
+- [ ] Guide users through Mega firmware preparation, macOS Accessibility permission, and testing the first button.
+- [ ] Make the settings tool easy to reopen and explain how to start/restart the companion app and opt into launch at login.
+- [ ] Verify installation, editing, cancellation, failed saves, and upgrades under a fresh user account; add the resulting setup instructions to the GitHub Release documentation.
