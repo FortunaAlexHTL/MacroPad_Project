@@ -10,16 +10,18 @@ public class ArduinoController
     /// <summary>
     /// Searches macOS USB modem ports for boards replying to the MacroPad identification command.
     /// </summary>
-    /// <param name="arduinoConnections"></param>
-    /// <param name="definedConfig">Configuration supplying the baud rate used to contact each candidate.</param>
+    /// <param name="arduinoConnection">Existing connections whose listening ports are skipped.</param>
+    /// <param name="baudRate">The baud rate used to contact each candidate.</param>
     /// <returns>An array of discovered port paths and device names, or an empty array if none match.</returns>
     /// <remarks>
-    /// Waits for board startup and reads one reply per candidate, checking its prefix and fields.
-    /// Reports timeout, access, and I/O failures and disposes each discovery connection before continuing.
+    /// Opens a temporary port for each attempt, waits for startup, and reads one identity reply.
+    /// Timeouts and malformed replies retry up to five times; access, I/O, and disposed-port errors
+    /// stop attempts for that port. Each temporary connection is disposed before continuing.
+    /// This method blocks during probing and waits two seconds after scanning all candidates.
     /// A button message arriving before the identity reply can cause a board to be missed.
     /// Returned names are not guaranteed to be unique, and returned ports are not left open.
     /// </remarks>
-    public Arduino[] GetArduinos(SerialPort[] arduinoConnections, Config definedConfig)
+    public Arduino[] GetArduinos(ArduinoConnection[] arduinoConnection, int baudRate)
     {
         string[] portNames = SerialPort.GetPortNames();
         Arduino[] tempArduinos = new Arduino[portNames.Length];
@@ -29,17 +31,17 @@ public class ArduinoController
         {
             string portName = portNames[i];
             
-            if (portName.StartsWith("/dev/cu.usbmodem") && !IsPortAlreadyOpen(portName, arduinoConnections))
+            if (portName.StartsWith("/dev/cu.usbmodem") && !IsPortAlreadyOpen(portName, arduinoConnection))
             {
                 Console.Write($"\n- Checking: {portName} ");
 
-                try
+                bool stopLoop = false;
+                for (int q = 0; q < MaxTryingAttempts && !stopLoop; q++)
                 {
-                    bool stopLoop = false;
-                    for (int q = 0; q < MaxTryingAttempts && !stopLoop; q++)
+                    try
                     {
                         Console.Write(".");
-                        using SerialPort arduino = new SerialPort(portName, definedConfig.BaudRate);
+                        using SerialPort arduino = new SerialPort(portName, baudRate);
                         arduino.ReadTimeout = 2000;
                         arduino.WriteTimeout = 2000;
                         arduino.NewLine = "\n";
@@ -60,24 +62,22 @@ public class ArduinoController
                             validPortsCount++;
                             stopLoop = true;
                         }
-
-                        arduino.Close();
                     }
+                    catch (TimeoutException)
+                    {
+                        Console.WriteLine($"\n- {portName} did not reply in time.\n");
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        Console.WriteLine($"\n- {portName} is unavailable or in use.\n");
+                        stopLoop = true;
                     
-                    Console.WriteLine();
-                }
-                catch (TimeoutException)
-                {
-                    Console.WriteLine($"- {portName} did not reply in time.\n");
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    Console.WriteLine($"- {portName} is unavailable or in use.\n");
-                    
-                }
-                catch (Exception exception) when (exception is IOException || exception is ObjectDisposedException)
-                {
-                    Console.WriteLine($"- Cannot communicate with {portName}: {exception.Message}.\n");
+                    }
+                    catch (Exception exception) when (exception is IOException || exception is ObjectDisposedException)
+                    {
+                        Console.WriteLine($"\n- Cannot communicate with {portName}: {exception.Message}\n");
+                        stopLoop = true;
+                    }
                 }
             }
         }
@@ -93,25 +93,91 @@ public class ArduinoController
         return arduinos;
     }
 
-    public bool IsPortAlreadyOpen(string portName, SerialPort[] arduinoConnections)
+    /// <summary>
+    /// Creates a connection object for each discovered device and attempts to open it.
+    /// </summary>
+    /// <param name="discoveredDevices">Device records returned by discovery.</param>
+    /// <param name="baudRate">The baud rate for the listening connections.</param>
+    /// <returns>One connection per device, including inactive objects whose handled opening attempt failed.</returns>
+    public ArduinoConnection[] OpenConnections(Arduino[] discoveredDevices, int baudRate)
+    {
+        ArduinoConnection[] arduinoConnections = new ArduinoConnection[discoveredDevices.Length];
+
+        for (int i = 0; i < discoveredDevices.Length; i++)
+        {
+            arduinoConnections[i] = new ArduinoConnection(discoveredDevices[i], baudRate);
+            arduinoConnections[i].Open();
+        }
+
+        return arduinoConnections;
+    }
+
+    /// <summary>
+    /// Disconnects every non-null connection in the supplied array.
+    /// </summary>
+    /// <param name="receivedArduinoConnections">Existing objects to disconnect; the array itself is unchanged.</param>
+    /// <remarks>Disconnected objects are disposed and should be replaced before connecting again.</remarks>
+    public void DisconnectConnections(ArduinoConnection[] receivedArduinoConnections)
+    {
+        for (int i = 0; i < receivedArduinoConnections.Length; i++)
+        {
+            if (receivedArduinoConnections[i] != null)
+            {
+                receivedArduinoConnections[i].Disconnect();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Checks whether at least one connection is marked as listening.
+    /// </summary>
+    /// <param name="arduinoConnections">Initialized connection objects to inspect.</param>
+    /// <returns>True if any connection is listening; false for an empty array or all inactive connections.</returns>
+    /// <remarks>Reads application state only; it does not probe whether hardware is still attached.</remarks>
+    public bool IsAnyDeviceListening(ArduinoConnection[] arduinoConnections)
+    {
+        bool result = false;
+
+        for (int i = 0; i < arduinoConnections.Length; i++)
+        {
+            result = result || arduinoConnections[i].GetListeningStatus();
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Checks whether a listening connection already uses the given port path.
+    /// </summary>
+    /// <param name="portName">The serial port path to compare.</param>
+    /// <param name="arduinoConnections">Existing connections; null entries are skipped.</param>
+    /// <returns>True when a listening connection has the same port path.</returns>
+    /// <remarks>Uses the connection's listening flag rather than querying the operating system.</remarks>
+    public bool IsPortAlreadyOpen(string portName, ArduinoConnection[] arduinoConnections)
     {
         bool result = false;
 
         for (int i = 0; i < arduinoConnections.Length && !result; i++)
         {
             bool isValid = arduinoConnections[i] != null;
-            isValid = isValid && arduinoConnections[i].IsOpen;
+            isValid = isValid && arduinoConnections[i].GetListeningStatus();
             
             if (isValid)
             {
-                result = arduinoConnections[i].PortName == portName;
+                result = arduinoConnections[i].GetDevice().Port == portName;
             }
         }
         
         return result;
     }
 
-    public string[] GetNewPortNames(SerialPort[] arduinoConnections)
+    /// <summary>
+    /// Lists USB modem port candidates not already used by a listening connection.
+    /// </summary>
+    /// <param name="arduinoConnections">Connections whose listening port paths should be excluded.</param>
+    /// <returns>Available candidate paths beginning with /dev/cu.usbmodem, possibly an empty array.</returns>
+    /// <remarks>Does not open ports or perform the handshake; candidates are not yet confirmed MacroPads.</remarks>
+    public string[] GetNewPortNames(ArduinoConnection[] arduinoConnections)
     {
         string[] totalPortNames = SerialPort.GetPortNames();
         string[] tempPortNames = new string[totalPortNames.Length];

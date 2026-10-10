@@ -1,27 +1,25 @@
 # MacroPad application — remaining work
 
-Reviewed 2026-10-09. Only unfinished work is listed here, in recommended order. [Completed work and review notes](../COMPLETED_WORK_2026-10-09.md) and the [original TODO backup](../TODO_BACKUP_2026-10-09.md) are preserved in the repository root.
+Reviewed 2026-10-10. Only unfinished work is listed here, grouped by responsibility. Resume with section 1, then the persistent-ID design in section 7 before finalizing configuration and settings schemas. The [refactor checkpoint](../REFACTOR_CHECKPOINT_2026-10-10.md) records newly completed work and the next mentoring step. [Completed work and review notes](../COMPLETED_WORK_2026-10-09.md) and the [original TODO backup](../TODO_BACKUP_2026-10-09.md) are preserved in the repository root.
 
-## 1. Fix the multiple-board reading loop, one step at a time
+## 1. Next: discover boards while existing connections stay active
 
-- [x] **First: reset `receivedData` inside the loop for each board.** It is currently reset only before the loop. After board A supplies a message, a timeout or read failure on board B leaves A's message in the variable and can execute it using B's name.
-- [x] Set `isListening` according to whether any connection is open, rather than overwriting it after each opening attempt. Currently the last board's result wins: a failed last connection prevents listening to earlier successful ones.
-- [x] Skip null, disposed, or closed connections when reading. Handle the failed connection separately so one disconnected board does not force all healthy boards to close and restart discovery.
-- [x] Parse nonnumeric messages safely before indexing fields. `receivedData.Split(':')[1]` currently throws for text without a colon. Distinguish identity/status replies from malformed button messages by prefix and field count.
-- [x] Reduce waiting behind idle boards. Each sequential `ReadLine()` can currently wait 500 ms, so an active board can be delayed by the others. Preserve partial lines per board if moving to reading available data; receiving some bytes does not guarantee a full line.
-- [ ] Add discovery of newly connected boards while other boards remain active. Discovery currently runs only when global listening stops; preserve healthy connections during rescans.
-- [ ] Add graceful cancellation of both loops and guaranteed cleanup on exit. A finite read timeout helps responsiveness but does not itself provide an exit path.
+- [ ] First, separate candidate enumeration from probing: use `GetNewPortNames` to identify ports not already in use, without opening them or changing the active connection array. The timer currently only prints a message.
+- [ ] Design discovery so startup waits and reply timeouts do not stop reading healthy boards. Do not call the current blocking `GetArduinos` directly from the active reading loop. Choose the smallest approach the user understands before implementing it.
+- [ ] Add confirmed connections to the existing collection and remove/dispose inactive entries without replacing healthy objects or mixing their buffers and identities. `OpenConnections` currently creates a new array; assigning it during an active scan would discard the old collection.
+- [ ] Verify plugging in or reconnecting one board while another stays active, with continued button processing and no duplicate opens. Rescan timing should avoid repeatedly probing a busy or unresponsive port.
+- [ ] Bound each connection's incoming buffer and define how to discard an oversized line and recover at the next newline. A device sending text without a newline currently grows the buffer indefinitely.
+- [ ] Add graceful cancellation and guaranteed cleanup on exit, including discovery waits. Keep partially executed macros out of automatic retries.
 
-## 2. Finish discovery and verify multiple-board recovery
+## 2. Improve discovery and cover remaining failure cases
 
-- [ ] Make the discovery retries match the intended behavior: the five-attempt loop currently retries malformed replies, but timeout/access/I/O exceptions exit the whole attempt loop because the catch is outside it. Define which failures should retry and which should skip the port.
-- [ ] Read past button messages on the same open discovery connection until identification succeeds or a total deadline expires. Reopening for each attempt can reset the board and adds startup delay.
-- [ ] Validate discovered names against the firmware's 1-24 ASCII letters, digits, underscores, or hyphens; reject or resolve duplicate names and `UNNAMED` boards before using names to select macros.
-- [ ] Make startup/retry timing explicit. Discovery still sleeps two seconds after every pass, and reopening for normal listening can reset the board again. Distinguish startup waits, empty-scan delays, and error retry delays.
-- [ ] Update `ArduinoController.GetArduinos` documentation to describe the new attempt loop and its actual exception behavior.
-- [ ] Verify two distinct board names using the same button code: only the sending board's macro should run, including when another board is idle, times out, or disconnects.
-- [ ] Verify failed-first/failed-last opening attempts, simultaneous presses, partial messages, malformed input without a colon, and connecting another board while listening. The earlier live test used one Mega and does not verify this revised loop.
-- [ ] Recheck no-board startup, occupied ports, unplugging between discovery and opening, and reconnecting at a changed path against the current code. Keep user-reported checks distinct from verified multiple-board cases.
+- [ ] Read past button messages on the same open discovery connection until identification succeeds or a total deadline expires. Each current attempt reads one line and reopening can reset the board.
+- [ ] Validate discovered names against the firmware's 1-24 ASCII letters, digits, underscores, or hyphens. Until persistent IDs are implemented, reject ambiguous duplicate names and handle `UNNAMED` explicitly before matching macros by name.
+- [ ] Make startup/retry timing explicit: two seconds per probe startup, up to two seconds per read, and two seconds after each scan. A silent candidate can take roughly 20 seconds plus scan delay; reopening for normal listening can reset it again.
+- [ ] Exercise the revised retry policy: timeout/malformed reply retries up to five times, valid identity stops, access/I/O/disposed-port failure skips that port. Confirm discovery proceeds to later candidates. This policy is implemented but its failure paths were not independently exercised in this review.
+- [ ] Verify distinct device names with the same button code and different actions; confirm only the sending board's action executes.
+- [ ] Verify failed-first/failed-last opening attempts, simultaneous presses, fragmented lines, multiple lines in one read, oversized lines, malformed input without a colon, and unknown numeric codes.
+- [ ] Recheck no-board startup, occupied ports, unplugging between discovery and opening, and reconnecting at a changed port path. Record exact setups and outcomes; user-reported basic multi-board/unplug tests are recorded in the root completion notes.
 
 ## 3. Make configuration portable and validate it before execution
 
@@ -58,9 +56,12 @@ Reviewed 2026-10-09. Only unfinished work is listed here, in recommended order. 
 
 ## 7. Complete device-specific settings integration
 
-- [ ] Define how renaming a board updates the `ArduinoDeviceName` values in its saved macros, so existing mappings do not stop matching after a rename.
-- [ ] Update `FindMacro` summaries and the empty `arduinoDeviceName` parameter description to explain matching both fields; include the device name in missing-mapping diagnostics.
-- [ ] Keep device records and serial connections associated with the same board when adding/removing connections. Avoid relying on independently rearranged array indexes.
+- [ ] Coordinate renaming with saved macros while matching still uses `ArduinoDeviceName`; after ID migration, keep mappings attached to the ID regardless of display-name changes.
+- [ ] Include the device name (and later ID) in missing-mapping diagnostics; the lookup documentation now describes both matching fields.
+- [ ] Define a persistent device ID assigned once during setup, separate from the editable display name. Decide the command/reply format before changing firmware or C#.
+- [ ] Generate and provision IDs from setup, persist them in EEPROM without overwriting the existing name storage, and confirm saved identity before reporting success. Handle missing, invalid, and duplicate IDs and interrupted setup.
+- [ ] Extend discovery records and handshake parsing to carry the ID, then migrate macro lookup and JSON validation to `(DeviceId, ButtonCode)`. Choose the final JSON property name together; `DeviceId` is a proposal, not the current schema.
+- [ ] Migrate existing name-based mappings deliberately; do not silently assign ambiguous mappings to duplicate names. Verify two boards with the same display name trigger only their own macros and retain IDs after reconnect/rename.
 
 ## 8. Final milestone: installer and GitHub Release
 

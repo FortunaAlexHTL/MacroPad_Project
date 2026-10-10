@@ -1,6 +1,6 @@
 # MacroPad settings — remaining work
 
-Reviewed 2026-10-09. Only unfinished work is listed here. Begin after the companion app's connection and configuration-validation fixes. [Completed work and review notes](../COMPLETED_WORK_2026-10-09.md) and the [original TODO backup](../TODO_BACKUP_2026-10-09.md) are in the repository root.
+Reviewed 2026-10-10. Only unfinished work is listed here. The connection-object refactor is complete; begin the editor after agreeing on identity and configuration-validation rules. See the [refactor checkpoint](../REFACTOR_CHECKPOINT_2026-10-10.md). [Completed work and review notes](../COMPLETED_WORK_2026-10-09.md) and the [original TODO backup](../TODO_BACKUP_2026-10-09.md) are in the repository root.
 
 ## 1. First milestone: edit one mapping and save it
 
@@ -29,8 +29,10 @@ Reviewed 2026-10-09. Only unfinished work is listed here. Begin after the compan
 - [ ] Send `SET_NAME:<name>` and confirm the matching `OK:<name>` reply before reporting success. Handle `ERROR:` replies, timeouts, disconnects, and button messages arriving between command replies.
 - [ ] Enforce the firmware's 1-24 ASCII letters, digits, underscores, or hyphens. Handle `UNNAMED` and duplicate names without identifying boards by discovery order.
 - [ ] Verify that a saved name is reported again after unplugging and reconnecting.
-- [ ] Save and validate mappings by `(ArduinoDeviceName, ButtonCode)`: equal button codes on different boards are allowed, but duplicate pairs are not. The companion app already uses this lookup; its multiple-board reading loop still needs fixes.
-- [ ] When renaming a board, coordinate updating its saved macro names and handle a failed save or rename without claiming both succeeded.
+- [ ] Save and validate mappings by `(ArduinoDeviceName, ButtonCode)`: equal button codes on different boards are allowed, but duplicate pairs are not. The companion app already uses this lookup; its refactored multiple-board loop is implemented, with basic hardware checks reported passing by the user. Migrate this pairing to persistent IDs together with the companion app.
+- [ ] When renaming a board, coordinate updating its saved macro names until ID-based lookup is implemented; handle a failed save or rename without claiming both succeeded.
+- [ ] Add setup-time provisioning of a persistent unique ID, separate from the display name. Read an existing ID first; assign and confirm one only when absent. Coordinate EEPROM storage and protocol changes with firmware and the companion app.
+- [ ] Once ID-based matching is implemented, allow duplicate display names and distinguish devices in the menu by their IDs. Validate uniqueness by `(DeviceId, ButtonCode)` using the agreed final schema, preserve IDs across renaming, and migrate existing name-based mappings explicitly.
 
 ## 4. Installer integration
 

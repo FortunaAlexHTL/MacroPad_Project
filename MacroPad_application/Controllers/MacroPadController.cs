@@ -1,4 +1,4 @@
-// Description: Finds the configured macro for a received button code.
+// Description: Finds the configured macro for a device name and received button code.
 
 namespace MacroPad_application.Controllers;
 
@@ -7,11 +7,11 @@ using Models;
 public class MacroPadController
 {
     /// <summary>
-    /// Finds the first macro whose button code matches the received code.
+    /// Finds the first macro whose device name and button code match the received message.
     /// </summary>
     /// <param name="macros">The macro array to search, containing no null entries.</param>
     /// <param name="buttonCode">The button code received from the Arduino.</param>
-    /// <param name="arduinoDeviceName"></param>
+    /// <param name="arduinoDeviceName">The sending device name; matching is exact and case-sensitive.</param>
     /// <returns>The first matching macro, or null if no matching macro exists.</returns>
     /// <remarks>Writes a console message when no match is found, including for an empty array.</remarks>
     public Macro? FindMacro(Macro[] macros, int buttonCode, string arduinoDeviceName)

@@ -8,7 +8,6 @@
 
 namespace MacroPad_application;
 using System;
-using System.IO.Ports;
 using System.Diagnostics;
 
 using Controllers;
@@ -33,17 +32,14 @@ class Program
         Config definedConfig = configurationReader.ReadConfig(configPath);
         
         string macrosPath = Path.Combine(configurationDirectoryPath, definedConfig.MacrosFile);
-        Macro[] definedMacro = configurationReader.ReadMacros(macrosPath);
+        Macro[] definedMacros = configurationReader.ReadMacros(macrosPath);
         // --------------------------------
         
         Console.WriteLine("- MacroPad is running ...\n");
         
         Console.WriteLine("- Searching for device ...");
-        SerialPort[] arduinoConnections = [];
-        Arduino[] arduinoObjects = [];
+        ArduinoConnection[] arduinoConnections = [];
         bool isListening = false;
-        bool[] isListeningArduino = [];
-        string[] arduinoBuffers = [];
         
         Stopwatch discoveryTimer = Stopwatch.StartNew();
         
@@ -51,114 +47,23 @@ class Program
         {
             if (!isListening)
             {
-                for (int i = 0; i < arduinoConnections.Length; i++)
-                {
-                    if (arduinoConnections[i] != null!)
-                    {
-                        arduinoConnections[i].Dispose();
-                    }
-                }
+                arduinoController.DisconnectConnections(arduinoConnections); // Disconnect old connections
                 
-                arduinoObjects = arduinoController.GetArduinos(arduinoConnections, definedConfig);
-                arduinoConnections = new SerialPort[arduinoObjects.Length];
-                isListeningArduino = new bool[arduinoObjects.Length];
-                arduinoBuffers = new string[arduinoObjects.Length];
+                Arduino[] discoveredDevices = arduinoController.GetArduinos(arduinoConnections, definedConfig.BaudRate); // Get new connections
+                arduinoConnections = arduinoController.OpenConnections(discoveredDevices, definedConfig.BaudRate); // Open new connections
 
-                for (int i = 0; i < arduinoConnections.Length; i++)
-                {
-                    try
-                    {
-                        arduinoConnections[i] = new SerialPort(arduinoObjects[i].Port, definedConfig.BaudRate);
-                        arduinoConnections[i].Open();
-                        isListeningArduino[i] = true;
-                        arduinoBuffers[i] = "";
-                        
-                        Console.WriteLine($"- Opened {arduinoObjects[i].Name} ...");
-                    }
-                    catch (Exception exception) when (exception is UnauthorizedAccessException || exception is IOException)
-                    {
-                        Console.WriteLine($"- Could not open {arduinoObjects[i].Name}: {exception.Message}.\n");
-                        
-                        if (arduinoConnections[i] != null!)
-                        {
-                            arduinoConnections[i].Dispose();
-                        }
-                        
-                        isListeningArduino[i] = false;
-                    }
-                }
-
-                for (int i = 0; i < isListeningArduino.Length; i++)
-                {
-                    isListening = isListening || isListeningArduino[i];
-                }
+                isListening = arduinoController.IsAnyDeviceListening(arduinoConnections); // Check if any device is listening
             }
             
             while (isListening)
             {
                 for (int i = 0; i < arduinoConnections.Length; i++)
                 {
-                    int positionOfEndLine = -1;
-                    string? receivedData = null;
-
-                    if (isListeningArduino[i])
-                    {
-                        try
-                        {
-                            string incomingText = arduinoConnections[i].ReadExisting();
-                            arduinoBuffers[i] += incomingText;
-                            positionOfEndLine = arduinoBuffers[i].IndexOf("\n");
-                        }
-                        catch (Exception exception) when (exception is IOException || exception is InvalidOperationException)
-                        {
-                            Console.WriteLine($"- Serial read failed: {arduinoObjects[i].Name}, {exception.Message}. Reconnect it.\n");
-                            isListeningArduino[i] = false;
-                            arduinoConnections[i].Dispose();
-                        }
-                        catch (TimeoutException)
-                        {
-                            isListeningArduino[i] = true;
-                            // Catch and move to next device
-                        }
-                    }
-
-                    if (positionOfEndLine == -1)
-                    {
-                        receivedData = null;
-                    }
-                    else
-                    {
-                        receivedData = arduinoBuffers[i].Substring(0, positionOfEndLine).Trim();
-                        arduinoBuffers[i] = arduinoBuffers[i].Remove(0, positionOfEndLine + 1);
-                    }
+                    string? receivedData = arduinoConnections[i].ReadMessage();
                     
                     if (receivedData != null)
                     {
-                        if (int.TryParse(receivedData, out int buttonCode))
-                        {
-                            Macro? macro = macroPadController.FindMacro(
-                                definedMacro, buttonCode, arduinoObjects[i].Name);
-
-                            if (macro != null)
-                            {
-                                macOsController.ExecuteMacro(macro);
-                            }
-                        }
-                        else
-                        {
-                            string[] parts = receivedData.Split(':');
-
-                            if (parts.Length == 2 &&
-                                parts[0] == "MACROPAD" &&
-                                parts[1] == arduinoObjects[i].Name)
-                            {
-                                Console.WriteLine($"- Identity reply received from {arduinoObjects[i].Name}.");
-                            }
-                            else
-                            {
-                                Console.WriteLine($"- Invalid message received: {receivedData}.");
-                            }
-                        }
+                        ProcessMessage(receivedData, arduinoConnections[i].GetDevice().Name, definedMacros, macroPadController, macOsController);
                     }
                     
                 }
@@ -168,13 +73,48 @@ class Program
                     Console.WriteLine("- Discovery timer elapsed.");
                     discoveryTimer.Restart();
                 }
-                Thread.Sleep(10);
-                isListening = false;
 
-                for (int i = 0; i < isListeningArduino.Length; i++)
-                {
-                    isListening = isListening || isListeningArduino[i];
-                }
+                Thread.Sleep(10);
+                isListening = arduinoController.IsAnyDeviceListening(arduinoConnections);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Routes a complete device message to macro execution or identity and invalid-message reporting.
+    /// </summary>
+    /// <param name="receivedData">A non-null complete message returned by the connection.</param>
+    /// <param name="deviceName">The sending device's name, used for macro matching and identity checks.</param>
+    /// <param name="definedMacros">The macro mappings loaded at startup.</param>
+    /// <param name="macroPadController">Finds the mapping for the device name and button code.</param>
+    /// <param name="macOsController">Executes the selected keyboard or application action.</param>
+    /// <remarks>Unknown codes execute no action. Macro-execution errors propagate to the caller.</remarks>
+    private static void ProcessMessage(string receivedData, string deviceName, Macro[] definedMacros, MacroPadController macroPadController,
+        MacOSController macOsController)
+    {
+        if (int.TryParse(receivedData, out int buttonCode))
+        {
+            Macro? macro = macroPadController.FindMacro(
+                definedMacros, buttonCode, deviceName);
+
+            if (macro != null)
+            {
+                macOsController.ExecuteMacro(macro);
+            }
+        }
+        else
+        {
+            string[] parts = receivedData.Split(':');
+
+            if (parts.Length == 2 &&
+                parts[0] == "MACROPAD" &&
+                parts[1] == deviceName)
+            {
+                Console.WriteLine($"- Identity reply received from {deviceName}.");
+            }
+            else
+            {
+                Console.WriteLine($"- Invalid message received: {receivedData}.");
             }
         }
     }

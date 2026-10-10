@@ -1,5 +1,7 @@
 # Completed work and project review — 2026-10-09
 
+For the current connection architecture and completed refactoring, see the [October 10 checkpoint](REFACTOR_CHECKPOINT_2026-10-10.md). The earlier findings below are historical.
+
 This document preserves implemented work for a future README and records review findings without changing source code. The [original roadmaps](TODO_BACKUP_2026-10-09.md) are backed up separately, including their historical completed checkboxes. Active remaining work is in the [application TODO](MacroPad_application/TODO.md) and [settings TODO](MacroPad_settings/TODO.md).
 
 “Implemented” below means present in the reviewed source. Build results, isolated checks, and user-reported hardware behavior are identified separately; none establishes that every failure case is handled.
