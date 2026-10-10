@@ -14,32 +14,22 @@ int commandLength = 0;
 bool commandTooLong = false;
 
 //Definiton of variables
-const int button1 = 6;
-const int button2 = 5;
-const int button3 = 4;
-const int button4 = 3;
-const int button5 = 2;
+const unsigned long debounceDelay = 100;
+const int buttonCount = 5;
 
-int buttonState1;
-int buttonState2;
-int buttonState3;
-int buttonState4;
-int buttonState5;
-
-int prevButtonState1 = HIGH;
-int prevButtonState2 = HIGH;
-int prevButtonState3 = HIGH;
-int prevButtonState4 = HIGH;
-int prevButtonState5 = HIGH;
+const int buttonPins[buttonCount] = {6, 5, 4, 3, 2};
+const int buttonCodes[buttonCount] = {10, 20, 30, 40, 50};
+int buttonStates[buttonCount] = {HIGH, HIGH, HIGH, HIGH, HIGH};
+int prevButtonStates[buttonCount] = {HIGH, HIGH, HIGH, HIGH, HIGH};
+unsigned long lastButtonPresses[buttonCount] = {0};
 
 // Configures all five button pins with internal pull-up resistors and starts serial communication.
 // Each button connects its input pin to ground when pressed.
 void setup() {
-  pinMode(button1, INPUT_PULLUP);
-  pinMode(button2, INPUT_PULLUP);
-  pinMode(button3, INPUT_PULLUP);
-  pinMode(button4, INPUT_PULLUP);
-  pinMode(button5, INPUT_PULLUP);
+  for(int i = 0; i < buttonCount; i++)
+  {
+      pinMode(buttonPins[i], INPUT_PULLUP);
+  }
 
   Serial.begin(115200);
   LoadDeviceName();
@@ -50,42 +40,21 @@ void setup() {
 void loop() {
   ReadSerialCommand();
 
-  buttonState1 = digitalRead(button1);
-  buttonState2 = digitalRead(button2);
-  buttonState3 = digitalRead(button3);
-  buttonState4 = digitalRead(button4);
-  buttonState5 = digitalRead(button5);
-
-  if(prevButtonState1 == HIGH && buttonState1 == LOW)
+  for(int i = 0; i < buttonCount; i++)
   {
-    Serial.println(10);
-  }
+    buttonStates[i] = digitalRead(buttonPins[i]);
 
-  if(prevButtonState2 == HIGH && buttonState2 == LOW)
-  {
-    Serial.println(20);
-  }
+    if(prevButtonStates[i] == HIGH && buttonStates[i] == LOW)
+    {
+      if(millis() - lastButtonPresses[i] >= debounceDelay)
+      {
+        Serial.println(buttonCodes[i]);
+        lastButtonPresses[i] = millis();
+      }
+    }
 
-  if(prevButtonState3 == HIGH && buttonState3 == LOW)
-  {
-    Serial.println(30);
+    prevButtonStates[i] = buttonStates[i];
   }
-
-  if(prevButtonState4 == HIGH && buttonState4 == LOW)
-  {
-    Serial.println(40);
-  }
-
-  if(prevButtonState5 == HIGH && buttonState5 == LOW)
-  {
-    Serial.println(50);
-  }
-
-  prevButtonState1 = buttonState1;
-  prevButtonState2 = buttonState2;
-  prevButtonState3 = buttonState3;
-  prevButtonState4 = buttonState4;
-  prevButtonState5 = buttonState5;
 }
 
 // Accepts 1-24 letters, digits, underscores, or hyphens so names cannot contain protocol separators.

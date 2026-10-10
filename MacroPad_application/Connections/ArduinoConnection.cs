@@ -69,6 +69,17 @@ public class ArduinoConnection
     /// </remarks>
     public string? ReadMessage()
     {
+        // Development only: detect disconnected virtual devices
+        if (_isListening &&
+            _device.Port.StartsWith("/tmp/") &&
+            !File.Exists(_device.Port))
+        {
+            Console.WriteLine($"- Virtual device {_device.Name} disconnected.");
+            Disconnect();
+            return null;
+        }
+        // TODO - Remove block before successful shipping .pkg
+        
         int positionOfEndLine = -1;
         string? receivedData = null;
 

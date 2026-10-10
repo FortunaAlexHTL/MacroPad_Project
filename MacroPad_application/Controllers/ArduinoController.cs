@@ -46,13 +46,16 @@ public class ArduinoController
     /// <remarks>Does not open ports or perform the handshake; candidates are not yet confirmed MacroPads.</remarks>
     public string[] GetNewPortNames(ArduinoConnection[] arduinoConnections)
     {
-        string[] totalPortNames = SerialPort.GetPortNames();
+        string[] totalPortNames = SerialPort.GetPortNames()
+            .Concat(Directory.GetFiles("/tmp", "cu.usbmodem*")) // TODO - Remove block before successful shipping .pkg
+            .Distinct()
+            .ToArray();
         string[] tempPortNames = new string[totalPortNames.Length];
         int counter = 0;
 
-        for (int i = 0; i < totalPortNames.Length; i++)
+        for (int i = 0; i < totalPortNames.Length; i++)                // TODO | Remove condition down before successful shipping .pkg
         {
-            if (totalPortNames[i].StartsWith("/dev/cu.usbmodem") && !IsPortAlreadyOpen(totalPortNames[i], arduinoConnections))
+            if ((totalPortNames[i].StartsWith("/dev/cu.usbmodem") || totalPortNames[i].StartsWith("/tmp/cu.usbmodem")) && !IsPortAlreadyOpen(totalPortNames[i], arduinoConnections))
             {
                 tempPortNames[counter] = totalPortNames[i];
                 counter++;
@@ -85,6 +88,11 @@ public class ArduinoController
             catch (UnauthorizedAccessException)
             {
                 Console.WriteLine($"\n- {portName} is unavailable or in use.\n");
+                ResetDiscovery();
+            }
+            catch (InvalidOperationException exception)
+            {
+                Console.WriteLine($"\n- Cannot reliably open {_candidatePort.PortName}: {exception.Message}");
                 ResetDiscovery();
             }
             catch (Exception exception) when (exception is IOException || exception is ObjectDisposedException)
