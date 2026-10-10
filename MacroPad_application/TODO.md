@@ -4,9 +4,9 @@ Reviewed 2026-10-10. Only unfinished work is listed here, grouped by responsibil
 
 ## 1. Next: discover boards while existing connections stay active
 
-- [ ] First, separate candidate enumeration from probing: use `GetNewPortNames` to identify ports not already in use, without opening them or changing the active connection array. The timer currently only prints a message.
-- [ ] Design discovery so startup waits and reply timeouts do not stop reading healthy boards. Do not call the current blocking `GetArduinos` directly from the active reading loop. Choose the smallest approach the user understands before implementing it.
-- [ ] Add confirmed connections to the existing collection and remove/dispose inactive entries without replacing healthy objects or mixing their buffers and identities. `OpenConnections` currently creates a new array; assigning it during an active scan would discard the old collection.
+- [x] First, separate candidate enumeration from probing: use `GetNewPortNames` to identify ports not already in use, without opening them or changing the active connection array. The timer currently only prints a message.
+- [x] Design discovery so startup waits and reply timeouts do not stop reading healthy boards. Do not call the current blocking `GetArduinos` directly from the active reading loop. Choose the smallest approach the user understands before implementing it.
+- [x] Add confirmed connections to the existing collection and remove/dispose inactive entries without replacing healthy objects or mixing their buffers and identities. `OpenConnections` currently creates a new array; assigning it during an active scan would discard the old collection.
 - [ ] Verify plugging in or reconnecting one board while another stays active, with continued button processing and no duplicate opens. Rescan timing should avoid repeatedly probing a busy or unresponsive port.
 - [ ] Bound each connection's incoming buffer and define how to discard an oversized line and recover at the next newline. A device sending text without a newline currently grows the buffer indefinitely.
 - [ ] Add graceful cancellation and guaranteed cleanup on exit, including discovery waits. Keep partially executed macros out of automatic retries.

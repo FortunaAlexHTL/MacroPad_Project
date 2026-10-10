@@ -1,5 +1,7 @@
-namespace MacroPad_application.Models;
+
+namespace MacroPad_application.Connections;
 using System.IO.Ports;
+using Models;
 
 public class ArduinoConnection
 {
@@ -34,9 +36,11 @@ public class ArduinoConnection
         }
         catch (Exception exception) when (exception is UnauthorizedAccessException || exception is IOException)
         {
-            Disconnect();
             Console.WriteLine($"- Could not open {_device.Name}: {exception.Message}.\n");
+            Disconnect();
         }
+        
+        
     }
 
     /// <summary>

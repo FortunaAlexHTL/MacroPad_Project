@@ -1,0 +1,37 @@
+[
+  {
+    "ArduinoDeviceName" : "DeskPad",
+    "ButtonCode": 10,
+    "ActionType": "Keyboard",
+    "Keys": [55, 8],
+    "ApplicationPath": null
+  },
+  {
+    "ArduinoDeviceName" : "DeskPad",
+    "ButtonCode": 20,
+    "ActionType": "Keyboard",
+    "Keys": [55, 9],
+    "ApplicationPath": null
+  },
+  {
+    "ArduinoDeviceName" : "DeskPad",
+    "ButtonCode": 30,
+    "ActionType": "Application",
+    "Keys": [],
+    "ApplicationPath": "/Applications/Google Chrome.app"
+  },
+  {
+    "ArduinoDeviceName" : "DeskPad",
+    "ButtonCode": 40,
+    "ActionType": "Keyboard",
+    "Keys": [74],
+    "ApplicationPath": null
+  },
+  {
+    "ArduinoDeviceName" : "DeskPad",
+    "ButtonCode": 50,
+    "ActionType": "Keyboard",
+    "Keys": [72],
+    "ApplicationPath": null
+  }
+]

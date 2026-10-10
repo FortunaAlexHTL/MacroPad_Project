@@ -6,10 +6,12 @@
 //               MacroPad               //
 //--------------------------------------//
 
+
 namespace MacroPad_application;
 using System;
 using System.Diagnostics;
 
+using Connections;
 using Controllers;
 using Models;
 
@@ -39,44 +41,48 @@ class Program
         
         Console.WriteLine("- Searching for device ...");
         ArduinoConnection[] arduinoConnections = [];
-        bool isListening = false;
-        
         Stopwatch discoveryTimer = Stopwatch.StartNew();
+        
+        string[] candidatePortNames = [];
+        int candidateIndex = 0;
+        
         
         while (true)
         {
-            if (!isListening)
+            for (int i = 0; i < arduinoConnections.Length; i++)
             {
-                arduinoController.DisconnectConnections(arduinoConnections); // Disconnect old connections
-                
-                Arduino[] discoveredDevices = arduinoController.GetArduinos(arduinoConnections, definedConfig.BaudRate); // Get new connections
-                arduinoConnections = arduinoController.OpenConnections(discoveredDevices, definedConfig.BaudRate); // Open new connections
-
-                isListening = arduinoController.IsAnyDeviceListening(arduinoConnections); // Check if any device is listening
+                string? receivedData = arduinoConnections[i].ReadMessage();
+                    
+                if (receivedData != null)
+                {
+                    ProcessMessage(receivedData, arduinoConnections[i].GetDevice().Name, definedMacros, macroPadController, macOsController);
+                }
             }
             
-            while (isListening)
+            arduinoConnections = arduinoController.RemoveInactiveConnections(arduinoConnections);
+
+            if (discoveryTimer.ElapsedMilliseconds >= 3000 && !arduinoController.IsDiscoveryRunning() && candidateIndex >= candidatePortNames.Length)
             {
-                for (int i = 0; i < arduinoConnections.Length; i++)
-                {
-                    string? receivedData = arduinoConnections[i].ReadMessage();
+                candidatePortNames = arduinoController.GetNewPortNames(arduinoConnections);
+                candidateIndex = 0;
                     
-                    if (receivedData != null)
-                    {
-                        ProcessMessage(receivedData, arduinoConnections[i].GetDevice().Name, definedMacros, macroPadController, macOsController);
-                    }
-                    
-                }
-
-                if (discoveryTimer.ElapsedMilliseconds >= 3000)
-                {
-                    Console.WriteLine("- Discovery timer elapsed.");
-                    discoveryTimer.Restart();
-                }
-
-                Thread.Sleep(10);
-                isListening = arduinoController.IsAnyDeviceListening(arduinoConnections);
+                discoveryTimer.Restart();
             }
+
+            if (!arduinoController.IsDiscoveryRunning() && candidateIndex < candidatePortNames.Length)
+            {
+                arduinoController.StartDiscovery(candidatePortNames[candidateIndex], definedConfig.BaudRate);
+                candidateIndex++;
+            }
+                
+            Arduino? discoveredDevice = arduinoController.UpdateDiscovery();
+
+            if (discoveredDevice != null)
+            {
+                arduinoConnections = arduinoController.AddConnection(arduinoConnections, discoveredDevice, definedConfig.BaudRate);
+            }
+
+            Thread.Sleep(10);
         }
     }
 

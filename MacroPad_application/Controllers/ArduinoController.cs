@@ -1,151 +1,18 @@
-using System.IO.Ports;
-using MacroPad_application.Models;
-
 namespace MacroPad_application.Controllers;
+
+using System.IO.Ports;
+using System.Diagnostics;
+
+using Connections;
+using Models;
 
 public class ArduinoController
 {
-    private const int MaxTryingAttempts = 5;
-
-    /// <summary>
-    /// Searches macOS USB modem ports for boards replying to the MacroPad identification command.
-    /// </summary>
-    /// <param name="arduinoConnection">Existing connections whose listening ports are skipped.</param>
-    /// <param name="baudRate">The baud rate used to contact each candidate.</param>
-    /// <returns>An array of discovered port paths and device names, or an empty array if none match.</returns>
-    /// <remarks>
-    /// Opens a temporary port for each attempt, waits for startup, and reads one identity reply.
-    /// Timeouts and malformed replies retry up to five times; access, I/O, and disposed-port errors
-    /// stop attempts for that port. Each temporary connection is disposed before continuing.
-    /// This method blocks during probing and waits two seconds after scanning all candidates.
-    /// A button message arriving before the identity reply can cause a board to be missed.
-    /// Returned names are not guaranteed to be unique, and returned ports are not left open.
-    /// </remarks>
-    public Arduino[] GetArduinos(ArduinoConnection[] arduinoConnection, int baudRate)
-    {
-        string[] portNames = SerialPort.GetPortNames();
-        Arduino[] tempArduinos = new Arduino[portNames.Length];
-        int validPortsCount = 0;
-        
-        for (int i = 0; i < portNames.Length; i++)
-        {
-            string portName = portNames[i];
-            
-            if (portName.StartsWith("/dev/cu.usbmodem") && !IsPortAlreadyOpen(portName, arduinoConnection))
-            {
-                Console.Write($"\n- Checking: {portName} ");
-
-                bool stopLoop = false;
-                for (int q = 0; q < MaxTryingAttempts && !stopLoop; q++)
-                {
-                    try
-                    {
-                        Console.Write(".");
-                        using SerialPort arduino = new SerialPort(portName, baudRate);
-                        arduino.ReadTimeout = 2000;
-                        arduino.WriteTimeout = 2000;
-                        arduino.NewLine = "\n";
-
-                        arduino.Open();
-
-                        // Opening the port can restart the Mega.
-                        Thread.Sleep(2000);
-
-                        arduino.WriteLine("WHO_ARE_YOU?");
-
-                        string[] response = arduino.ReadLine().Trim().Split(':');
-
-                        if (response.Length == 2 && response[0] == "MACROPAD" &&
-                            !string.IsNullOrWhiteSpace(response[1]))
-                        {
-                            tempArduinos[validPortsCount] = new(portName, response[1]);
-                            validPortsCount++;
-                            stopLoop = true;
-                        }
-                    }
-                    catch (TimeoutException)
-                    {
-                        Console.WriteLine($"\n- {portName} did not reply in time.\n");
-                    }
-                    catch (UnauthorizedAccessException)
-                    {
-                        Console.WriteLine($"\n- {portName} is unavailable or in use.\n");
-                        stopLoop = true;
-                    
-                    }
-                    catch (Exception exception) when (exception is IOException || exception is ObjectDisposedException)
-                    {
-                        Console.WriteLine($"\n- Cannot communicate with {portName}: {exception.Message}\n");
-                        stopLoop = true;
-                    }
-                }
-            }
-        }
-
-        Arduino[] arduinos = new Arduino[validPortsCount];
-        
-        for (int i = 0; i < arduinos.Length; i++)
-        {
-            arduinos[i] = tempArduinos[i];
-        }
-        
-        Thread.Sleep(2000);
-        return arduinos;
-    }
-
-    /// <summary>
-    /// Creates a connection object for each discovered device and attempts to open it.
-    /// </summary>
-    /// <param name="discoveredDevices">Device records returned by discovery.</param>
-    /// <param name="baudRate">The baud rate for the listening connections.</param>
-    /// <returns>One connection per device, including inactive objects whose handled opening attempt failed.</returns>
-    public ArduinoConnection[] OpenConnections(Arduino[] discoveredDevices, int baudRate)
-    {
-        ArduinoConnection[] arduinoConnections = new ArduinoConnection[discoveredDevices.Length];
-
-        for (int i = 0; i < discoveredDevices.Length; i++)
-        {
-            arduinoConnections[i] = new ArduinoConnection(discoveredDevices[i], baudRate);
-            arduinoConnections[i].Open();
-        }
-
-        return arduinoConnections;
-    }
-
-    /// <summary>
-    /// Disconnects every non-null connection in the supplied array.
-    /// </summary>
-    /// <param name="receivedArduinoConnections">Existing objects to disconnect; the array itself is unchanged.</param>
-    /// <remarks>Disconnected objects are disposed and should be replaced before connecting again.</remarks>
-    public void DisconnectConnections(ArduinoConnection[] receivedArduinoConnections)
-    {
-        for (int i = 0; i < receivedArduinoConnections.Length; i++)
-        {
-            if (receivedArduinoConnections[i] != null)
-            {
-                receivedArduinoConnections[i].Disconnect();
-            }
-        }
-    }
-
-    /// <summary>
-    /// Checks whether at least one connection is marked as listening.
-    /// </summary>
-    /// <param name="arduinoConnections">Initialized connection objects to inspect.</param>
-    /// <returns>True if any connection is listening; false for an empty array or all inactive connections.</returns>
-    /// <remarks>Reads application state only; it does not probe whether hardware is still attached.</remarks>
-    public bool IsAnyDeviceListening(ArduinoConnection[] arduinoConnections)
-    {
-        bool result = false;
-
-        for (int i = 0; i < arduinoConnections.Length; i++)
-        {
-            result = result || arduinoConnections[i].GetListeningStatus();
-        }
-
-        return result;
-    }
-
+    private DiscoveryStage _discoveryStage = DiscoveryStage.Idle;
+    private SerialPort? _candidatePort = null;
+    private Stopwatch _discoveryTime = new Stopwatch();
+    private string _discoveryBuffer = "";
+    
     /// <summary>
     /// Checks whether a listening connection already uses the given port path.
     /// </summary>
@@ -200,5 +67,191 @@ public class ArduinoController
         }
         
         return portNames;
+    }
+
+    public void StartDiscovery(string portName, int baudRate)
+    {
+        if (_discoveryStage == DiscoveryStage.Idle)
+        {
+            try
+            {
+                _candidatePort = new SerialPort(portName, baudRate);
+                _candidatePort.WriteTimeout = 2000;
+                _candidatePort.NewLine = "\n";
+                _candidatePort.Open();
+                _discoveryTime.Restart();
+                _discoveryStage = DiscoveryStage.WaitingForStartup;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Console.WriteLine($"\n- {portName} is unavailable or in use.\n");
+                ResetDiscovery();
+            }
+            catch (Exception exception) when (exception is IOException || exception is ObjectDisposedException)
+            {
+                Console.WriteLine($"\n- Cannot communicate with {portName}: {exception.Message}\n");
+                ResetDiscovery();
+            }
+        }
+    }
+
+    public Arduino? UpdateDiscovery()
+    {
+        Arduino? discoveredDevice = null;
+        
+        if (_discoveryStage == DiscoveryStage.WaitingForStartup && _candidatePort != null && _discoveryTime.ElapsedMilliseconds >= 2000)
+        {
+            try
+            {
+                _candidatePort.WriteLine("WHO_ARE_YOU?");
+                _discoveryTime.Restart();
+                _discoveryStage = DiscoveryStage.WaitingForIdentity;
+            }
+            catch (InvalidOperationException exception)
+            {
+                Console.WriteLine($"\n- Cannot send identification request to {_candidatePort.PortName}: the serial port is no longer open. {exception.Message}");
+                ResetDiscovery();
+            }
+            catch(TimeoutException)
+            {
+                Console.WriteLine($"\n- Timed out sending identification request to {_candidatePort.PortName}.");
+                ResetDiscovery();
+            }
+            catch (Exception exception) when (exception is IOException || exception is ObjectDisposedException)
+            {
+                Console.WriteLine($"\n- Cannot communicate with {_candidatePort.PortName}: {exception.Message}\n");
+                ResetDiscovery();
+            }
+        }
+        else if (_discoveryStage == DiscoveryStage.WaitingForIdentity && _candidatePort != null)
+        {
+            int positionOfEndLine = -1;
+            string? identityMessage = null;
+            
+            try
+            {
+                string response = _candidatePort.ReadExisting();
+                _discoveryBuffer += response;
+                positionOfEndLine = _discoveryBuffer.IndexOf("\n");
+            }
+            catch (InvalidOperationException exception)
+            {
+                Console.WriteLine($"\n- Cannot read identification request to {_candidatePort.PortName}: the serial port is no longer open. {exception.Message}");
+                ResetDiscovery();
+            }
+            catch (OverflowException exception)
+            {
+                Console.WriteLine($"\n- Could not read identification reply from {_candidatePort.PortName}: {exception.Message}");
+                ResetDiscovery();
+            }
+            catch (Exception exception) when (exception is IOException || exception is ObjectDisposedException)
+            {
+                Console.WriteLine($"\n- Cannot communicate with {_candidatePort.PortName}: {exception.Message}\n");
+                ResetDiscovery();
+            }
+
+            if (positionOfEndLine != -1)
+            {
+                identityMessage = _discoveryBuffer.Substring(0, positionOfEndLine).Trim();
+                _discoveryBuffer = _discoveryBuffer.Remove(0, positionOfEndLine + 1);
+            }
+
+            if (identityMessage != null)
+            {
+                string[] response = identityMessage.Split(':');
+                
+                if (response.Length == 2 && response[0] == "MACROPAD" &&
+                    !string.IsNullOrWhiteSpace(response[1]))
+                {
+                    discoveredDevice = new Arduino(_candidatePort.PortName, response[1]);
+                    ResetDiscovery();
+                }
+            }
+        }
+
+        if (_discoveryStage == DiscoveryStage.WaitingForIdentity && _candidatePort != null &&
+            _discoveryTime.ElapsedMilliseconds >= 2000)
+        {
+            Console.WriteLine($"{_candidatePort.PortName} did not provide a valid identification reply in time.");
+            ResetDiscovery();
+        }
+        
+        return discoveredDevice;
+    }
+
+    public bool IsDiscoveryRunning()
+    {
+        return _discoveryStage != DiscoveryStage.Idle;
+    }
+    
+    private void ResetDiscovery()
+    {
+        _discoveryStage = DiscoveryStage.Idle;
+        if (_candidatePort != null)
+        {
+            _candidatePort.Dispose();
+        }
+
+        _discoveryBuffer = "";
+        _candidatePort = null;
+        _discoveryTime.Reset();
+    }
+    
+    public ArduinoConnection[] AddConnection(ArduinoConnection[] existingConnections, Arduino discoveredDevice, int baudRate)
+    {
+        bool deviceIsAlreadyListening = IsPortAlreadyOpen(discoveredDevice.Port, existingConnections);
+
+        if (!deviceIsAlreadyListening)
+        {
+            ArduinoConnection discoveredConnection = new ArduinoConnection(discoveredDevice,  baudRate);
+            discoveredConnection.Open();
+
+            if (discoveredConnection.GetListeningStatus())
+            {
+                ArduinoConnection[] newConnections = new ArduinoConnection[existingConnections.Length + 1];
+                
+                for (int i = 0; i < existingConnections.Length; i++)
+                {
+                    newConnections[i] = existingConnections[i];
+                }
+                
+                newConnections[newConnections.Length - 1] = discoveredConnection;
+                existingConnections = newConnections;
+            }
+        }
+
+        return existingConnections;
+    }
+
+    public ArduinoConnection[] RemoveInactiveConnections(ArduinoConnection[] existingConnections)
+    {
+        int activeConnectionsCount = 0;
+        
+        for (int i = 0; i < existingConnections.Length; i++)
+        {
+            if (existingConnections[i].GetListeningStatus())
+            {
+                activeConnectionsCount++;
+            }
+        }
+
+        if (activeConnectionsCount != existingConnections.Length)
+        {
+            ArduinoConnection[] activeConnections = new ArduinoConnection[activeConnectionsCount];
+            int activeConnectionsIndex = 0;
+
+            for (int i = 0; i < existingConnections.Length; i++)
+            {
+                if (existingConnections[i].GetListeningStatus())
+                {
+                    activeConnections[activeConnectionsIndex] = existingConnections[i];
+                    activeConnectionsIndex++;
+                }
+            }
+            
+            existingConnections = activeConnections;
+        }
+
+        return existingConnections;
     }
 }
