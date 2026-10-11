@@ -32,11 +32,11 @@ public class ArduinoConnection
             _incomingBuffer = "";
             _isListening = true;
 
-            Console.WriteLine($"\n- Opened {_device.Name} ...");
+            Console.WriteLine($"- Opened {_device.Id} ...");
         }
         catch (Exception exception) when (exception is UnauthorizedAccessException || exception is IOException)
         {
-            Console.WriteLine($"- Could not open {_device.Name}: {exception.Message}.\n");
+            Console.WriteLine($"- Could not open {_device.Id}: {exception.Message}.\n");
             Disconnect();
         }
         
@@ -74,7 +74,7 @@ public class ArduinoConnection
             _device.Port.StartsWith("/tmp/") &&
             !File.Exists(_device.Port))
         {
-            Console.WriteLine($"- Virtual device {_device.Name} disconnected.");
+            Console.WriteLine($"- Virtual device {_device.Id} disconnected.");
             Disconnect();
             return null;
         }
@@ -95,7 +95,7 @@ public class ArduinoConnection
                 (exception is IOException || exception is InvalidOperationException
                                           || exception is OverflowException)
             {
-                Console.WriteLine($"- Serial read failed: {_device.Name}, {exception.Message}. Reconnect it.\n");
+                Console.WriteLine($"- Serial read failed: {_device.Id}, {exception.Message}. Reconnect it.\n");
                 Disconnect();
             }
             catch (TimeoutException)

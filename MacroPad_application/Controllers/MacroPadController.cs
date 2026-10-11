@@ -20,7 +20,7 @@ public class MacroPadController
         
         for (int i = 0; i < macros.Length && macro == null; i++)
         {
-            if (arduinoDeviceName == macros[i].ArduinoDeviceName && buttonCode == macros[i].ButtonCode)
+            if (arduinoDeviceName == macros[i].ArduinoDeviceId && buttonCode == macros[i].ButtonCode)
             {
                 macro = macros[i];
             }

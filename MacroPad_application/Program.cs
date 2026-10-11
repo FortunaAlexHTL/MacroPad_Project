@@ -20,6 +20,8 @@ class Program
     private const string ConfigFileName = "config.json";
     static void Main()
     {
+        Console.WriteLine("- MacroPad is running ...\n");
+        
         // Starting up controllers and configuration reader
         MacOSController macOsController = new MacOSController();
         MacroPadController  macroPadController = new MacroPadController();
@@ -28,16 +30,10 @@ class Program
         // ------------------------------------------------
         
         // Getting configuration and macros
-        string configurationDirectoryPath = configurationReader.GetConfigurationDirectoryPath();
-        
-        string configPath = Path.Combine(configurationDirectoryPath, ConfigFileName);
-        Config definedConfig = configurationReader.ReadConfig(configPath);
-        
-        string macrosPath = Path.Combine(configurationDirectoryPath, definedConfig.MacrosFile);
-        Macro[] definedMacros = configurationReader.ReadMacros(macrosPath);
+        Config? definedConfig = null;
+        Macro[] definedMacros = [];
+        bool readSuccesfull = configurationReader.ReadAllFiles(ref definedConfig, ref definedMacros);
         // --------------------------------
-        
-        Console.WriteLine("- MacroPad is running ...\n");
         
         Console.WriteLine("- Searching for device ...");
         ArduinoConnection[] arduinoConnections = [];
@@ -47,7 +43,7 @@ class Program
         int candidateIndex = 0;
         
         
-        while (true)
+        while (readSuccesfull)
         {
             for (int i = 0; i < arduinoConnections.Length; i++)
             {
@@ -55,7 +51,7 @@ class Program
                     
                 if (receivedData != null)
                 {
-                    ProcessMessage(receivedData, arduinoConnections[i].GetDevice().Name, definedMacros, macroPadController, macOsController);
+                    ProcessMessage(receivedData, arduinoConnections[i].GetDevice().Id, definedMacros, macroPadController, macOsController);
                 }
             }
             

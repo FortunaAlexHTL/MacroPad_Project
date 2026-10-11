@@ -7,6 +7,11 @@ namespace MacroPad_application
 {
     public class ConfigurationReader
     {
+        private const string ConfigFileName = "config.json";
+        private const string MacroFileName = "macros.json";
+        private bool _isMacrosFileReadable = true;
+        private bool _isConfigFileReadable = true;
+        
         /// <summary>
         /// Reads a JSON array of macro definitions and converts it into macro records.
         /// </summary>
@@ -18,17 +23,26 @@ namespace MacroPad_application
         /// File-reading errors propagate to the caller. Individual records and their values
         /// are not validated by this method.
         /// </remarks>
-        public Macro[] ReadMacros(string path)
+        private Macro[] ReadMacros(string path)
         {
-            string fileContents = File.ReadAllText(path);
-            Macro[]? macros = JsonSerializer.Deserialize<Macro[]>(fileContents);
+            Macro[]? macros = [];
 
-            if (macros == null)
+            try
             {
-                throw new InvalidDataException("The macro file must contain an array.");
-            }
+                string fileContents = File.ReadAllText(path);
+                macros = JsonSerializer.Deserialize<Macro[]>(fileContents);
 
-            return macros;
+                if (macros == null)
+                {
+                    throw new InvalidDataException("The macro file must contain an array.");
+                }
+            }
+            catch (FileNotFoundException)
+            {
+                _isMacrosFileReadable = false;
+            }
+            
+            return macros!;
         }
 
         /// <summary>
@@ -42,7 +56,7 @@ namespace MacroPad_application
         /// File-reading errors propagate to the caller. Configuration values are not validated.
         /// The caller must resolve MacrosFile relative to the configuration file's directory.
         /// </remarks>
-        public Config ReadConfig(string path)
+        private Config ReadConfig(string path)
         {
             string fileContents = File.ReadAllText(path);
             Config? config = JsonSerializer.Deserialize<Config>(fileContents);
@@ -60,7 +74,7 @@ namespace MacroPad_application
         /// </summary>
         /// <returns>The path to Library/Application Support/MacroPad under the user's home directory.</returns>
         /// <remarks>Creates the directory only; configuration files must already be supplied separately.</remarks>
-        public string GetConfigurationDirectoryPath()
+        private string GetConfigurationDirectoryPath()
         {
             string homeDirectory = Environment.GetFolderPath(
                 Environment.SpecialFolder.UserProfile);
@@ -71,6 +85,89 @@ namespace MacroPad_application
             Directory.CreateDirectory(configurationDirectory);
         
             return configurationDirectory;
+        }
+
+        private bool CreateFilesIfNoneExist(string configurationDirectoryPath)
+        {
+            bool createSuccess = false;
+            
+            if (!_isConfigFileReadable)
+            {
+                string defaultConfigPath = Path.Combine(AppContext.BaseDirectory, "Configuration", "config.json");
+                string configPath = Path.Combine(configurationDirectoryPath, ConfigFileName);
+                File.Copy(defaultConfigPath, configPath);
+                _isConfigFileReadable = true;
+                createSuccess = true;
+            }
+            
+            if (!_isMacrosFileReadable)
+            {
+                string defaultMacrosPath = Path.Combine(AppContext.BaseDirectory, "Configuration", "macros.json");
+                string marcrosPath = Path.Combine(configurationDirectoryPath, MacroFileName);
+                File.Copy(defaultMacrosPath, marcrosPath);
+                _isMacrosFileReadable = true;
+                createSuccess = true;
+            }
+            
+            if  (!_isConfigFileReadable || !_isMacrosFileReadable)
+            {
+                createSuccess = false;
+            }
+            
+            return createSuccess;
+        }
+
+        public bool ReadAllFiles(ref Config? definedConfig, ref Macro[] definedMacros)
+        {
+            string configurationDirectoryPath = GetConfigurationDirectoryPath();
+            bool readSuccessful = false;
+            bool createSuccessful = false;
+            AreFilesReadable(configurationDirectoryPath);
+
+            while (!readSuccessful)
+            {
+                if ((_isConfigFileReadable && _isMacrosFileReadable) || createSuccessful)
+                {
+                    string configPath = Path.Combine(configurationDirectoryPath, ConfigFileName);
+                    definedConfig = ReadConfig(configPath);
+
+                    string macrosPath = Path.Combine(configurationDirectoryPath, MacroFileName);
+                    definedMacros = ReadMacros(macrosPath);
+
+                    readSuccessful = true;
+                }
+                else
+                {
+                    Console.WriteLine("- Files were corrupted or missing, creating new files with default template");
+                    createSuccessful = CreateFilesIfNoneExist(configurationDirectoryPath);
+                }
+            }
+            
+            return readSuccessful;
+        } 
+        private void AreFilesReadable(string configurationDirectoryPath)
+        {
+            try
+            {
+                string configPath = Path.Combine(configurationDirectoryPath, ConfigFileName);
+                File.Open(configPath, FileMode.Open).Close();
+                _isConfigFileReadable = true;
+            }
+            catch (FileNotFoundException)
+            {
+                _isConfigFileReadable = false;
+            }
+
+            try
+            {
+                string macroPath = Path.Combine(configurationDirectoryPath, MacroFileName);
+                File.Open(macroPath, FileMode.Open).Close();
+                _isMacrosFileReadable  = true;
+            }
+            catch (FileNotFoundException)
+            {
+                _isMacrosFileReadable = false;
+            }
         }
     }
 }

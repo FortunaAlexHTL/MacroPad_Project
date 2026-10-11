@@ -1,4 +1,3 @@
 {
-  "BaudRate": 115200,
-  "MacrosFile": "macros.json"
+  "BaudRate": 115200
 }

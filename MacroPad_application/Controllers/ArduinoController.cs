@@ -92,7 +92,7 @@ public class ArduinoController
             }
             catch (InvalidOperationException exception)
             {
-                Console.WriteLine($"\n- Cannot reliably open {_candidatePort.PortName}: {exception.Message}");
+                Console.WriteLine($"\n- Cannot reliably open {portName}: {exception.Message}");
                 ResetDiscovery();
             }
             catch (Exception exception) when (exception is IOException || exception is ObjectDisposedException)

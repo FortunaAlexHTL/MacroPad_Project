@@ -1,7 +1,7 @@
 namespace MacroPad_application.Models;
 
 public record Macro(
-    string? ArduinoDeviceName,
+    string? ArduinoDeviceId,
     int ButtonCode,
     string ActionType,
     int[] Keys,
