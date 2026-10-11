@@ -18,7 +18,7 @@ public record Arduino(
         }
 
         bool valid = id.Length == 6 && id != "000000";
-
+        
         for (int i = 0; valid && i < id.Length; i++)
         {
             valid = id[i] >= ' ' && id[i] <= '~';

@@ -20,14 +20,16 @@ class Program
     private const string ConfigFileName = "config.json";
     static void Main()
     {
-        Console.WriteLine("- MacroPad is running ...\n");
-        
         // Starting up controllers and configuration reader
+        Logger logger = new Logger();
         MacOSController macOsController = new MacOSController();
         MacroPadController  macroPadController = new MacroPadController();
         ArduinoController  arduinoController = new ArduinoController();
         ConfigurationReader configurationReader = new ConfigurationReader();
         // ------------------------------------------------
+        
+        Console.WriteLine("- MacroPad is running ...\n");
+        logger.LogInfo("MacroPad application started.");
         
         // Getting configuration and macros
         Config? definedConfig = null;
@@ -38,14 +40,14 @@ class Program
             return;
         }
         // --------------------------------
-        
-        Console.WriteLine("- Searching for device ...");
         ArduinoConnection[] arduinoConnections = [];
         Stopwatch discoveryTimer = Stopwatch.StartNew();
         
         string[] candidatePortNames = [];
         int candidateIndex = 0;
         
+        Console.WriteLine("- Searching for device ...");
+        logger.LogInfo("Search for devices started.");
         
         while (readSuccesfull)
         {

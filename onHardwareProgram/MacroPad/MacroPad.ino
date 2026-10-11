@@ -7,7 +7,7 @@
 const int DeviceIdLength = 6;
 const int CommandBufferSize = 7 + DeviceIdLength + 1; // SET_ID: + six characters + ending zero.
 const byte SavedIdMarker = 166;
-const int SavedIdAddress = 32; // Keep the old name at addresses 0-25 untouched.
+const int SavedIdAddress = 0; // Keep the old name at addresses 0-25 untouched.
 
 char deviceId[DeviceIdLength + 1] = "000000";
 char commandBuffer[CommandBufferSize];
