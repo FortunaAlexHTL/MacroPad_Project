@@ -1,7 +1,9 @@
+
 namespace MacroPad_application.Controllers;
 
 using System.IO.Ports;
 using System.Diagnostics;
+using System.Security.Cryptography;
 
 using Connections;
 using Models;
@@ -10,6 +12,7 @@ public class ArduinoController
 {
     private DiscoveryStage _discoveryStage = DiscoveryStage.Idle;
     private SerialPort? _candidatePort = null;
+    private string _assignedId = "";
     private Stopwatch _discoveryTime = new Stopwatch();
     private string _discoveryBuffer = "";
     
@@ -103,7 +106,7 @@ public class ArduinoController
         }
     }
 
-    public Arduino? UpdateDiscovery()
+    public Arduino? UpdateDiscovery(ArduinoConnection[] arduinoConnections)
     {
         Arduino? discoveredDevice = null;
         
@@ -176,7 +179,60 @@ public class ArduinoController
                 }
                 else if (response.Length == 2 && response[0] == "MACROPAD")
                 {
-                    Console.WriteLine($"- Device on {_candidatePort!.PortName} needs a valid six-character printable ASCII ID. Use SET_ID:<id>; 000000 is unconfigured.");
+                    bool available = false;
+                    
+                    while (!available)
+                    {
+                        _assignedId = GenerateDeviceId();
+                        available = CheckIdAvailability(arduinoConnections, _assignedId);
+                    }
+                    
+                    _candidatePort.WriteLine($"SET_ID:{_assignedId}");
+                    _discoveryStage = DiscoveryStage.WaitingForIdConfirmation;
+                    _discoveryTime.Restart();
+                }
+            }
+        }
+        else if (_discoveryStage == DiscoveryStage.WaitingForIdConfirmation && _candidatePort != null)
+        {
+            int positionOfEndLine = -1;
+            string? identityMessage = null;
+            
+            try
+            {
+                string response = _candidatePort.ReadExisting();
+                _discoveryBuffer += response;
+                positionOfEndLine = _discoveryBuffer.IndexOf("\n");
+            }
+            catch (InvalidOperationException exception)
+            {
+                Console.WriteLine($"\n- Cannot read identification request to {_candidatePort.PortName}: the serial port is no longer open. {exception.Message}");
+                ResetDiscovery();
+            }
+            catch (OverflowException exception)
+            {
+                Console.WriteLine($"\n- Could not read identification reply from {_candidatePort.PortName}: {exception.Message}");
+                ResetDiscovery();
+            }
+            catch (Exception exception) when (exception is IOException || exception is ObjectDisposedException)
+            {
+                Console.WriteLine($"\n- Cannot communicate with {_candidatePort.PortName}: {exception.Message}\n");
+                ResetDiscovery();
+            }
+
+            if (positionOfEndLine != -1)
+            {
+                identityMessage = _discoveryBuffer.Substring(0, positionOfEndLine).TrimEnd('\r');
+                _discoveryBuffer = _discoveryBuffer.Remove(0, positionOfEndLine + 1);
+            }
+
+            if (identityMessage != null)
+            {
+                string[] response = identityMessage.Split(':', 2);
+
+                if (response.Length == 2 && response[0] == "OK" && response[1] == _assignedId)
+                {
+                    discoveredDevice = new Arduino(_candidatePort.PortName, response[1]);
                     ResetDiscovery();
                 }
             }
@@ -188,10 +244,45 @@ public class ArduinoController
             Console.WriteLine($"{_candidatePort.PortName} did not provide a valid identification reply in time.");
             ResetDiscovery();
         }
+
+        if (_discoveryStage == DiscoveryStage.WaitingForIdConfirmation && _candidatePort != null &&
+            _discoveryTime.ElapsedMilliseconds >= 2000)
+        {
+            Console.WriteLine($"{_candidatePort.PortName} did not provide a valid assignment reply in time.");
+            ResetDiscovery();
+        }
         
         return discoveredDevice;
     }
 
+    private bool CheckIdAvailability(ArduinoConnection[] arduinoConnections, string id)
+    {
+        bool available = true;
+        
+        for (int i = 0; i < arduinoConnections.Length; i++)
+        {
+            if (arduinoConnections[i].GetDevice().Id == id)
+            {
+                available = false;
+            }
+        }
+        
+        return available;
+    }
+    
+    private string GenerateDeviceId()
+    {
+        const string characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        char[] id = new char[6];
+
+        for (int i = 0; i < id.Length; i++)
+        {
+            id[i] = characters[RandomNumberGenerator.GetInt32(characters.Length)];
+        }
+        
+        return new string(id);
+    }
+    
     public bool IsDiscoveryRunning()
     {
         return _discoveryStage != DiscoveryStage.Idle;

@@ -30,7 +30,6 @@ class Program
         
         Console.WriteLine("- MacroPad is running ...\n");
         logger.LogInfo("MacroPad application started.");
-        configurationReader.CreateBackup();
         // Getting configuration and macros
         Config? definedConfig = null;
         Macro[] definedMacros = [];
@@ -80,11 +79,26 @@ class Program
                 candidateIndex++;
             }
                 
-            Arduino? discoveredDevice = arduinoController.UpdateDiscovery();
+            Arduino? discoveredDevice = arduinoController.UpdateDiscovery(arduinoConnections);
 
             if (discoveredDevice != null)
             {
                 arduinoConnections = arduinoController.AddConnection(arduinoConnections, discoveredDevice, definedConfig.BaudRate);
+
+                bool deviceHasMacros = IsDeviceConfigured(definedMacros, discoveredDevice.Id);
+                bool deviceHasBeenConfigured = false;
+                
+                if (!deviceHasMacros)
+                {
+                    deviceHasBeenConfigured = configurationReader.CreateNewMacrosPreset(ref definedMacros, discoveredDevice.Id);
+                    configurationReader.WriteMacros(definedMacros);
+                    configurationReader.CreateBackup();
+
+                    if (deviceHasBeenConfigured)
+                    {
+                        // TODO - open settings app for configuring the Macros
+                    }
+                }
             }
 
             Thread.Sleep(10);
@@ -128,5 +142,20 @@ class Program
                 Console.WriteLine($"- Invalid message received: {receivedData}.");
             }
         }
+    }
+
+    private static bool IsDeviceConfigured(Macro[] definedMacros, string deviceId)
+    {
+        bool deviceHasMacros = false;
+        
+        for (int i = 0; i < definedMacros.Length; i++)
+        {
+            if (definedMacros[i].ArduinoDeviceId == deviceId)
+            {
+                deviceHasMacros = true;
+            }
+        }
+        
+        return deviceHasMacros;
     }
 }

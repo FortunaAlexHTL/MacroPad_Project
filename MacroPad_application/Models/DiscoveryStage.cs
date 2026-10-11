@@ -4,5 +4,6 @@ public enum DiscoveryStage
 {
     Idle,
     WaitingForStartup,
+    WaitingForIdConfirmation,
     WaitingForIdentity
 }

@@ -30,7 +30,7 @@ namespace MacroPad_application
                         definedConfig = ReadConfig(configPath);
                         readSuccessfulConfig = definedConfig != null;
                     }
-                    catch (InvalidDataException exception)
+                    catch (InvalidDataException)
                     {
                         readSuccessfulConfig = false;
                     }
@@ -41,7 +41,7 @@ namespace MacroPad_application
                         definedMacros = ReadMacros(macrosPath);
                         readSuccessfulMacros = true;
                     }
-                    catch (InvalidDataException exception)
+                    catch (InvalidDataException)
                     {
                         readSuccessfulMacros = false;
                     }
@@ -57,14 +57,119 @@ namespace MacroPad_application
                 }
             }
             
-            if (!readSuccessful)
+            if (!readSuccessful || createSuccessful)
             {
                 _logger.LogError("Configuration could not be loaded after recovery attempts. Default files were restored.");
-                return false;
+                readSuccessful = false;
             }
             
             return readSuccessful;
-        } 
+        }
+        
+        public void CreateBackup()
+        {
+            string timeStamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss-fff");
+            string configurationDirectoryPath = GetConfigurationDirectoryPath();
+            string backupDirectoryPath = GetBackupDirectoryPath();
+            
+            string configFileName = $"config_{timeStamp}.json";
+            string macrosFileName = $"macros_{timeStamp}.json";
+            
+            string currentConfigPath = Path.Combine(configurationDirectoryPath, ConfigFileName);
+            string currentMacrosPath = Path.Combine(configurationDirectoryPath, MacroFileName);
+            
+            string backupConfigPath = Path.Combine(backupDirectoryPath, configFileName);
+            string backupMacrosPath = Path.Combine(backupDirectoryPath, macrosFileName);
+
+            try
+            {
+                string errorMessage = "";
+                
+                errorMessage += VerifyFileForBackup(currentConfigPath, "config"); 
+                
+                errorMessage += VerifyFileForBackup(currentMacrosPath, "macros"); 
+
+                if (errorMessage == "ConfigMacro" )
+                    throw new InvalidDataException("Files are not in the correct format.");
+
+                if (errorMessage == "Config")
+                    throw new InvalidDataException("Config file is not in the correct format.");
+                
+                if (errorMessage == "Macro")
+                    throw new InvalidDataException("Macro file is not in the correct format.");
+                
+                File.Copy(currentConfigPath, backupConfigPath);
+                File.Copy(currentMacrosPath, backupMacrosPath);
+            }
+            catch (Exception exception) when (exception is FileNotFoundException || exception is InvalidDataException 
+                                              || exception is IOException || exception is UnauthorizedAccessException
+                                              || exception is DirectoryNotFoundException)
+            {
+                _logger.LogError($"Backup could not be created: {exception.Message}");
+            }
+        }
+
+        public bool CreateNewMacrosPreset(ref Macro[] existingMacros, string deviceId)
+        {
+            Macro[] tempMacros = new Macro[5];
+            Macro[] macros = new Macro[tempMacros.Length + existingMacros.Length];
+
+            for (int i = 0; i < tempMacros.Length; i++)
+            {
+                int baseButtonCode = 10;
+                
+                tempMacros[i] = new Macro(deviceId, 
+                    (i+1)*baseButtonCode, 
+                    "Keyboard", 
+                    [], 
+                    null);
+            }
+
+            for (int i = 0; i < existingMacros.Length; i++)
+            {
+                macros[i] = existingMacros[i];
+            }
+            
+            int counter = 0;
+            
+            for (int i = existingMacros.Length; i < macros.Length; i++)
+            {
+                macros[i] = tempMacros[counter];
+                counter++;
+            }
+            
+            existingMacros = macros;
+            
+            return true;
+        }
+
+        public void WriteMacros(Macro[] macros)
+        {
+            string configurationDirectoryPath = GetConfigurationDirectoryPath();
+            string macrosPath = Path.Combine(configurationDirectoryPath, MacroFileName);
+            
+            try
+            {
+                if (macros == null)
+                {
+                    throw new InvalidDataException();
+                }
+                
+                JsonSerializerOptions options = new JsonSerializerOptions { WriteIndented = true };
+                string content = JsonSerializer.Serialize(macros, options);
+                File.WriteAllText(macrosPath, content);
+            }
+            catch (Exception exception) when (exception is FileNotFoundException  || exception is InvalidDataException
+                                              || exception is JsonException)
+            {
+                _logger.LogWarning("Macro file could not be written.");
+                throw new InvalidDataException("Macro configuration could not be loaded on this attempt.");
+            }
+        }
+        
+        
+        // Helper Methods
+        // --------------
         
         /// <summary>
         /// Reads a JSON array of macro definitions and converts it into macro records.
@@ -90,15 +195,6 @@ namespace MacroPad_application
                 if (macros == null)
                 {
                     throw new InvalidDataException();
-                }
-
-                for (int i = 0; i < macros.Length; i++)
-                {
-                    if (macros[i] == null || !Arduino.IsValidId(macros[i].ArduinoDeviceId))
-                    {
-                        _logger.LogError($"Macro ID {macros[i].ArduinoDeviceId} is not valid");
-                        //TODO - Implement assignment of newly generated ID - with call of settings for Macros setup.
-                    }
                 }
             }
             catch (Exception exception) when (exception is FileNotFoundException  || exception is InvalidDataException
@@ -148,9 +244,6 @@ namespace MacroPad_application
             return config;
         }
         
-        // Helper Methods
-        // --------------
-        
         /// <summary>
         /// Creates the current user's MacroPad configuration directory if it does not exist.
         /// </summary>
@@ -179,47 +272,6 @@ namespace MacroPad_application
             Directory.CreateDirectory(backupDirectory);
             
             return backupDirectory;
-        }
-
-        public void CreateBackup()
-        {
-            string timeStamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-            string configurationDirectoryPath = GetConfigurationDirectoryPath();
-            string backupDirectoryPath = GetBackupDirectoryPath();
-            
-            string configFileName = $"config_{timeStamp}.json";
-            string macrosFileName = $"macros_{timeStamp}.json";
-            
-            string currentConfigPath = Path.Combine(configurationDirectoryPath, ConfigFileName);
-            string currentMacrosPath = Path.Combine(configurationDirectoryPath, MacroFileName);
-            
-            string backupConfigPath = Path.Combine(backupDirectoryPath, configFileName);
-            string backupMacrosPath = Path.Combine(backupDirectoryPath, macrosFileName);
-
-            try
-            {
-                string errorMessage = "";
-                
-                errorMessage += VerifyFileForBackup(currentConfigPath, "config"); 
-                
-                errorMessage += VerifyFileForBackup(currentMacrosPath, "macros"); 
-
-                if (errorMessage == "ConfigMacro" )
-                    throw new InvalidDataException("Files are not in the correct format.");
-
-                if (errorMessage == "Config")
-                    throw new InvalidDataException("Config file is not in the correct format.");
-                
-                if (errorMessage == "Macro")
-                    throw new InvalidDataException("Macro file is not in the correct format.");
-                
-                File.Copy(currentConfigPath, backupConfigPath);
-                File.Copy(currentMacrosPath, backupMacrosPath);
-            }
-            catch (Exception exception) when (exception is FileNotFoundException || exception is InvalidDataException)
-            {
-                _logger.LogError($"Backup could not be created: {exception.Message}");
-            }
         }
         
         private void BackupRestauration(string fileType)
@@ -291,8 +343,13 @@ namespace MacroPad_application
                 {
                     string fileContents = File.ReadAllText(currentFilePath);
                     Config? config = JsonSerializer.Deserialize<Config>(fileContents);
+
+                    if (config == null)
+                    {
+                        throw new InvalidDataException();
+                    }
                 }
-                catch (JsonException)
+                catch (Exception exception) when (exception is JsonException || exception is InvalidDataException)
                 {
                     errorMessage += "Config";
                 }
@@ -304,8 +361,13 @@ namespace MacroPad_application
                 {
                     string fileContents = File.ReadAllText(currentFilePath);
                     Macro[]? macro = JsonSerializer.Deserialize<Macro[]>(fileContents);
+
+                    if (macro == null)
+                    {
+                        throw new InvalidDataException();
+                    }
                 }
-                catch (JsonException)
+                catch (Exception exception) when (exception is JsonException || exception is InvalidDataException)
                 {
                     errorMessage += "Macro";
                 }
