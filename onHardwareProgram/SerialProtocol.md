@@ -1,67 +1,44 @@
-# MacroPad serial commands
+# MacroPad serial protocol
 
-The Mega 2560 uses **115200 baud**. Every command ends with a newline (`\n`).
-Button presses still send the decimal codes `10`, `20`, `30`, `40`, and `50`.
+The Mega 2560 sketch is `onHardwareProgram/MacroPad/MacroPad.ino`. Serial communication uses **115200 baud**, with newline-terminated messages. CRLF is also accepted. Close the companion app before using Serial Monitor, since only one process should own a board's port.
 
-## Try it in Arduino Serial Monitor
+## Device IDs
 
-1. Close the C# companion app so it is not using the serial port.
-2. Open `MacroPad.ino` in Arduino IDE. If the IDE asks to put the sketch into
-   a matching `MacroPad` folder, use a copy for this test.
-3. Select **Arduino Mega or Mega 2560**, select the board's port, and upload.
-4. Open Serial Monitor, select **115200 baud** and **Newline**. Wait about two
-   seconds for the board to start. **Both NL & CR** also works.
-5. Send the commands below one at a time.
+An assigned ID is exactly **six printable ASCII characters** (codes 32–126): letters, digits, punctuation, and spaces. Matching is exact and case-sensitive. Leading/trailing spaces, colons, and leading zeroes are significant. `000000` is reserved for an unconfigured board and cannot be assigned with `SET_ID` or used in macro mappings.
 
-| Send | Expected reply |
+IDs are strings, not numbers. The app uses `Arduino.Id` and JSON `ArduinoDeviceId`. There is no separate device-name field. IDs must be unique across connected boards; the companion app refuses a second active connection with the same ID. The board cannot determine whether another board already uses an ID. Automatic ID generation/provisioning in the settings app is still pending.
+
+## Commands
+
+| Send | Reply |
 | --- | --- |
-| `WHO_ARE_YOU?` | `MACROPAD:UNNAMED` on a board with no saved name |
-| `SET_NAME:DeskPad` | `OK:DeskPad` |
-| `WHO_ARE_YOU?` | `MACROPAD:DeskPad` |
-| `SET_NAME:` | `ERROR:INVALID_NAME` |
-| `SET_NAME:Desk Pad` | `ERROR:INVALID_NAME` |
+| `WHO_ARE_YOU?` | `MACROPAD:<id>` (or `MACROPAD:000000` before setup) |
+| `SET_ID:Ab1:!?` | `OK:Ab1:!?` |
+| `SET_ID:000001` | `OK:000001` |
+| `SET_ID:abc` | `ERROR:INVALID_ID` |
+| `SET_ID:000000` | `ERROR:INVALID_ID` |
+| `SET_NAME:DeskPad` | Unsupported legacy command; may produce `ERROR:COMMAND_TOO_LONG` because it exceeds the buffer |
 | `HELLO` | `ERROR:UNKNOWN_COMMAND` |
 
-Unplug and reconnect the board, reopen Serial Monitor, wait for startup, and
-send `WHO_ARE_YOU?` again. It should still reply `MACROPAD:DeskPad`.
-Also check that the five buttons still send their original codes.
+`SET_ID:` is **seven characters**, so the firmware compares seven characters and starts the payload at offset seven. The maximum payload line is 13 characters: seven for the command and six for the ID. Longer lines produce `ERROR:COMMAND_TOO_LONG`; the rest of that line is discarded. Blank lines are ignored. IDs cannot contain control characters, newline, or non-ASCII characters.
 
-Names accept 1-24 ASCII letters, digits, underscores, or hyphens. Commands are
-case-sensitive. Blank lines are ignored. A line longer than 33 characters
-returns `ERROR:COMMAND_TOO_LONG` and is discarded; the following line works normally.
+The companion app splits replies at the **first colon only**, and removes CRLF without trimming spaces. For example, `MACROPAD: A:b! ` contains the six-character ID ` A:b! `, including both spaces. Preserve those spaces in JSON and setup commands. Quote and backslash characters must be escaped using normal JSON rules in configuration files.
 
-## How the code works
+Button messages remain `10`, `20`, `30`, `40`, and `50`. During discovery, unrelated complete lines are skipped while waiting for a valid identity. The controller allows two seconds for startup and then two seconds for identification; it advances these stages from the main loop rather than sleeping through them. Opening and writing are still synchronous operations. A successful probe is closed before the listening connection is opened, which can reset the board again.
 
-- `ReadSerialCommand()` collects characters in an array. When it receives a
-  newline, it passes the completed text to `HandleCommand()`.
-- `HandleCommand()` recognizes the question or rename command and sends a reply.
-- `IsValidName()` checks the length and allowed characters before saving.
-- `SaveDeviceName()` stores a changed name in EEPROM, which survives unplugging.
-- `LoadDeviceName()` reads it during `setup()`, falling back to `UNNAMED` if no
-  valid saved name exists.
+## EEPROM migration
 
-In C++, these text arrays end with a zero character, written `\0`. It marks
-the end of the text; it is different from the newline `\n` sent over serial.
-`strcmp(a, b) == 0` means two strings match. `strncmp(a, b, 9) == 0` compares
-only the first nine characters. `command + 9` points to the text after `SET_NAME:`.
+The new ID save marker is 166 at address 32. Addresses 33–39 store the six-character ID and a terminating zero. The old name marker/data at addresses 0–25 are left untouched and are **not** treated as an ID. After upgrading old firmware, an unprovisioned board reports `000000` until assigned an ID.
 
-EEPROM address 0 holds a marker saying that a save finished. Addresses 1-25
-hold the name and ending zero. The marker is cleared before changing the name
-and written last, so an interrupted save falls back to `UNNAMED`.
-`EEPROM.update()` writes a byte only if it differs from the stored value.
+Saving clears the marker first, writes changed bytes with `EEPROM.update`, and writes the marker last. Missing or invalid stored data leaves the default `000000`. This does not generate unique IDs automatically.
 
-## Connecting C# next
+## Manual setup and verification
 
-On an already open `SerialPort`, `arduino.WriteLine("WHO_ARE_YOU?")` sends the
-question and `arduino.WriteLine("SET_NAME:DeskPad")` sends the rename command.
-The C# application still needs reply handling before using these in its normal
-flow: its current read loop expects only button numbers.
+1. Upload the sketch for Arduino Mega 2560 when ready; this documentation update does not upload it.
+2. Open Serial Monitor at 115200 baud with Newline, and allow about two seconds for startup.
+3. Send `WHO_ARE_YOU?`, then `SET_ID:000001` for the first board. Choose a different ID for every additional board.
+4. Confirm `OK:000001`, unplug/reconnect, then confirm `WHO_ARE_YOU?` returns `MACROPAD:000001`.
+5. In the existing `~/Library/Application Support/MacroPad/macros.json`, replace legacy `ArduinoDeviceName` fields with `ArduinoDeviceId` using the board's actual assigned ID. Do not just rename the property while leaving an old name as its value.
+6. Close Serial Monitor, start the companion app, and test configured buttons. The bundled example mappings target `000001`; existing user files are not overwritten.
 
-Use a finite read timeout when waiting for a reply and allow startup time after
-opening the port, because opening it can reset the Mega. Button codes can arrive
-between replies, so do not assume the first received line is the requested reply.
-Only one part of the app should read from the port at a time.
-
-After the manual test works, the next step is C# handshake handling on the known
-port, followed by automatic port discovery. The saved name does not change the
-macOS `/dev/cu...` path. Multiple boards can currently have the same name.
+For old configurations, make a backup before editing. Invalid/missing IDs receive a startup error instead of silently matching a name. The settings app's setup workflow and a general automatic JSON migration are not implemented yet.

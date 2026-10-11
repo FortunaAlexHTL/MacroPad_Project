@@ -160,18 +160,23 @@ public class ArduinoController
 
             if (positionOfEndLine != -1)
             {
-                identityMessage = _discoveryBuffer.Substring(0, positionOfEndLine).Trim();
+                identityMessage = _discoveryBuffer.Substring(0, positionOfEndLine).TrimEnd('\r');
                 _discoveryBuffer = _discoveryBuffer.Remove(0, positionOfEndLine + 1);
             }
 
             if (identityMessage != null)
             {
-                string[] response = identityMessage.Split(':');
+                string[] response = identityMessage.Split(':', 2);
                 
                 if (response.Length == 2 && response[0] == "MACROPAD" &&
-                    !string.IsNullOrWhiteSpace(response[1]))
+                    Arduino.IsValidId(response[1]))
                 {
                     discoveredDevice = new Arduino(_candidatePort.PortName, response[1]);
+                    ResetDiscovery();
+                }
+                else if (response.Length == 2 && response[0] == "MACROPAD")
+                {
+                    Console.WriteLine($"- Device on {_candidatePort!.PortName} needs a valid six-character printable ASCII ID. Use SET_ID:<id>; 000000 is unconfigured.");
                     ResetDiscovery();
                 }
             }
@@ -207,6 +212,23 @@ public class ArduinoController
     
     public ArduinoConnection[] AddConnection(ArduinoConnection[] existingConnections, Arduino discoveredDevice, int baudRate)
     {
+        if (!Arduino.IsValidId(discoveredDevice.Id))
+        {
+            Console.WriteLine($"- Cannot connect {discoveredDevice.Port}: invalid or unconfigured device ID.");
+            return existingConnections;
+        }
+
+        for (int i = 0; i < existingConnections.Length; i++)
+        {
+            if (existingConnections[i].GetListeningStatus() &&
+                existingConnections[i].GetDevice().Id == discoveredDevice.Id &&
+                existingConnections[i].GetDevice().Port != discoveredDevice.Port)
+            {
+                Console.WriteLine($"- Duplicate device ID {discoveredDevice.Id} on {discoveredDevice.Port}. Assign different IDs before using both boards.");
+                return existingConnections;
+            }
+        }
+
         bool deviceIsAlreadyListening = IsPortAlreadyOpen(discoveredDevice.Port, existingConnections);
 
         if (!deviceIsAlreadyListening)

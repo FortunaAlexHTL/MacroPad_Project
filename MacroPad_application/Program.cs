@@ -33,6 +33,10 @@ class Program
         Config? definedConfig = null;
         Macro[] definedMacros = [];
         bool readSuccesfull = configurationReader.ReadAllFiles(ref definedConfig, ref definedMacros);
+        if (!readSuccesfull || definedConfig == null)
+        {
+            return;
+        }
         // --------------------------------
         
         Console.WriteLine("- Searching for device ...");
@@ -86,18 +90,18 @@ class Program
     /// Routes a complete device message to macro execution or identity and invalid-message reporting.
     /// </summary>
     /// <param name="receivedData">A non-null complete message returned by the connection.</param>
-    /// <param name="deviceName">The sending device's name, used for macro matching and identity checks.</param>
+    /// <param name="deviceId">The sending device's ID, used for macro matching and identity checks.</param>
     /// <param name="definedMacros">The macro mappings loaded at startup.</param>
-    /// <param name="macroPadController">Finds the mapping for the device name and button code.</param>
+    /// <param name="macroPadController">Finds the mapping for the device ID and button code.</param>
     /// <param name="macOsController">Executes the selected keyboard or application action.</param>
     /// <remarks>Unknown codes execute no action. Macro-execution errors propagate to the caller.</remarks>
-    private static void ProcessMessage(string receivedData, string deviceName, Macro[] definedMacros, MacroPadController macroPadController,
+    private static void ProcessMessage(string receivedData, string deviceId, Macro[] definedMacros, MacroPadController macroPadController,
         MacOSController macOsController)
     {
         if (int.TryParse(receivedData, out int buttonCode))
         {
             Macro? macro = macroPadController.FindMacro(
-                definedMacros, buttonCode, deviceName);
+                definedMacros, buttonCode, deviceId);
 
             if (macro != null)
             {
@@ -106,13 +110,13 @@ class Program
         }
         else
         {
-            string[] parts = receivedData.Split(':');
+            string[] parts = receivedData.Split(':', 2);
 
             if (parts.Length == 2 &&
                 parts[0] == "MACROPAD" &&
-                parts[1] == deviceName)
+                parts[1] == deviceId)
             {
-                Console.WriteLine($"- Identity reply received from {deviceName}.");
+                Console.WriteLine($"- Identity reply received from {deviceId}.");
             }
             else
             {

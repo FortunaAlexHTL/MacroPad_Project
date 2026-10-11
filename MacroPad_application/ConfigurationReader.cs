@@ -20,8 +20,8 @@ namespace MacroPad_application
         /// <exception cref="InvalidDataException">The JSON deserializes to null.</exception>
         /// <exception cref="JsonException">The JSON cannot be converted into a macro array.</exception>
         /// <remarks>
-        /// File-reading errors propagate to the caller. Individual records and their values
-        /// are not validated by this method.
+        /// File-reading errors propagate to the caller. Device IDs are checked; other macro values
+        /// are not yet validated by this method.
         /// </remarks>
         private Macro[] ReadMacros(string path)
         {
@@ -36,6 +36,14 @@ namespace MacroPad_application
                 {
                     throw new InvalidDataException("The macro file must contain an array.");
                 }
+
+                for (int i = 0; i < macros.Length; i++)
+                {
+                    if (macros[i] == null || !Arduino.IsValidId(macros[i].ArduinoDeviceId))
+                    {
+                        throw new InvalidDataException($"Macro {i + 1} requires ArduinoDeviceId with exactly six printable ASCII characters (000000 is reserved). Older ArduinoDeviceName mappings must be updated to the board's assigned ID; the file has not been overwritten.");
+                    }
+                }
             }
             catch (FileNotFoundException)
             {
@@ -46,7 +54,7 @@ namespace MacroPad_application
         }
 
         /// <summary>
-        /// Reads serial connection settings and the macro-file location from a JSON file.
+        /// Reads the baud rate from a JSON file.
         /// </summary>
         /// <param name="path">The file path; relative paths use the current working directory.</param>
         /// <returns>The deserialized configuration record.</returns>
@@ -54,7 +62,7 @@ namespace MacroPad_application
         /// <exception cref="JsonException">The JSON cannot be converted into a configuration record.</exception>
         /// <remarks>
         /// File-reading errors propagate to the caller. Configuration values are not validated.
-        /// The caller must resolve MacrosFile relative to the configuration file's directory.
+        /// Macros are loaded separately from macros.json in the configuration directory.
         /// </remarks>
         private Config ReadConfig(string path)
         {
@@ -132,7 +140,15 @@ namespace MacroPad_application
                     definedConfig = ReadConfig(configPath);
 
                     string macrosPath = Path.Combine(configurationDirectoryPath, MacroFileName);
-                    definedMacros = ReadMacros(macrosPath);
+                    try
+                    {
+                        definedMacros = ReadMacros(macrosPath);
+                    }
+                    catch (InvalidDataException exception)
+                    {
+                        Console.WriteLine($"- Cannot load macros: {exception.Message}");
+                        return false;
+                    }
 
                     readSuccessful = true;
                 }

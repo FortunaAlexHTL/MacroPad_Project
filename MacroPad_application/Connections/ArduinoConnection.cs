@@ -58,7 +58,7 @@ public class ArduinoConnection
     /// Appends available serial text and extracts at most one complete newline-terminated message.
     /// </summary>
     /// <returns>
-    /// The trimmed message, including an empty string for a blank line; null if inactive,
+    /// The message with its CRLF terminator removed, including an empty string for a blank line; null if inactive,
     /// no complete line is available, or a handled read error occurs.
     /// </returns>
     /// <remarks>
@@ -109,7 +109,7 @@ public class ArduinoConnection
             }
             else
             {
-                receivedData = _incomingBuffer.Substring(0, positionOfEndLine).Trim();
+                receivedData = _incomingBuffer.Substring(0, positionOfEndLine).TrimEnd('\r');
                 _incomingBuffer = _incomingBuffer.Remove(0, positionOfEndLine + 1);
             }
         }
@@ -135,7 +135,7 @@ public class ArduinoConnection
     /// <summary>
     /// Gets the discovery information associated with this connection.
     /// </summary>
-    /// <returns>The device record containing the port path and reported name.</returns>
+    /// <returns>The device record containing the port path and reported ID.</returns>
     public Arduino GetDevice()
     {
         return _device;
