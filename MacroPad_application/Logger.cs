@@ -27,7 +27,7 @@ public class Logger
         string homeDirectory = Environment.GetFolderPath(
             Environment.SpecialFolder.UserProfile);
             
-        string logsDirectory = Path.Combine(homeDirectory, "Library", "Application Support", "Logs", "MacroPad");
+        string logsDirectory = Path.Combine(homeDirectory, "Library", "Logs", "MacroPad");
             
         Directory.CreateDirectory(logsDirectory);
             
@@ -70,7 +70,7 @@ public class Logger
         if (!_isLogsFileReadable)
         {
             File.Create(logPath).Close();
-            string[] contents = {logPath};
+            string[] contents = {logs};
                 
             File.WriteAllLines(logPath, contents);
         }

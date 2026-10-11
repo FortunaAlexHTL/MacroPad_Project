@@ -20,7 +20,7 @@ namespace MacroPad_application
             bool createSuccessful = false;
             AreConfigurationFilesReadable(configurationDirectoryPath);
 
-            while (!readSuccessful)
+            for(int i = 0; i < 2 && !readSuccessful; i++)
             {
                 if ((_isConfigFileReadable && _isMacrosFileReadable) || createSuccessful)
                 {
@@ -28,11 +28,10 @@ namespace MacroPad_application
                     try
                     {
                         definedConfig = ReadConfig(configPath);
-                        readSuccessfulConfig = true;
+                        readSuccessfulConfig = definedConfig != null;
                     }
                     catch (InvalidDataException exception)
                     {
-                        _logger.LogError($"Cannot load config: {exception.Message}");
                         readSuccessfulConfig = false;
                     }
 
@@ -44,7 +43,6 @@ namespace MacroPad_application
                     }
                     catch (InvalidDataException exception)
                     {
-                        _logger.LogError($"Cannot load macros: {exception.Message}");
                         readSuccessfulMacros = false;
                     }
                 }
@@ -57,6 +55,12 @@ namespace MacroPad_application
                 {
                     readSuccessful = true;
                 }
+            }
+            
+            if (!readSuccessful)
+            {
+                _logger.LogError("Configuration could not be loaded after recovery attempts. Default files were restored.");
+                return false;
             }
             
             return readSuccessful;
@@ -76,26 +80,16 @@ namespace MacroPad_application
         private Macro[] ReadMacros(string path)
         {
 
-            Macro[]? macros = [];
+            Macro[]? macros = null;
             
             try
             {
                 string fileContents = File.ReadAllText(path);
-                
-                try
-                {
-                    macros = JsonSerializer.Deserialize<Macro[]>(fileContents);
-                }
-                catch (JsonException)
-                {
-                    _logger.LogError($"Macro file contents are invalid");
-                    _isMacrosFileReadable = false;
-                }
+                macros = JsonSerializer.Deserialize<Macro[]>(fileContents);
 
                 if (macros == null)
                 {
-                    _logger.LogError($"Macro file contents are invalid");
-                    throw new InvalidDataException("Macro file is invalid");
+                    throw new InvalidDataException();
                 }
 
                 for (int i = 0; i < macros.Length; i++)
@@ -107,10 +101,12 @@ namespace MacroPad_application
                     }
                 }
             }
-            catch (Exception exception) when (exception is FileNotFoundException  || exception is InvalidDataException)
+            catch (Exception exception) when (exception is FileNotFoundException  || exception is InvalidDataException
+                                              || exception is JsonException)
             {
-                _logger.LogError("Macro file was not found. Backup restauration will be tried, if that fails a default file will be created.");
-                BackupRestauration("macro");
+                _logger.LogWarning("Macro file could not be read. Backup restauration will be tried, if that fails a default file will be created.");
+                BackupRestauration("macros");
+                throw new InvalidDataException("Macro configuration could not be loaded on this attempt.");
             }
             
             return macros!;
@@ -134,27 +130,19 @@ namespace MacroPad_application
             try
             {
                 string fileContents = File.ReadAllText(path);
-
-                try
-                {
-                    config = JsonSerializer.Deserialize<Config>(fileContents);
-                }
-                catch (JsonException)
-                {
-                    _isConfigFileReadable = false;
-                }
+                config = JsonSerializer.Deserialize<Config>(fileContents);
 
                 if (config == null)
                 {
-                    _logger.LogError($"Config file contents are invalid.");
-                    throw new InvalidDataException("Config file is invalid");
+                    throw new InvalidDataException();
                 }
             }
-            catch (Exception exception) when (exception is FileNotFoundException || exception is InvalidDataException)
+            catch (Exception exception) when (exception is FileNotFoundException || exception is InvalidDataException
+                                              || exception is JsonException)
             {
-                _logger.LogError($"Config file contents are invalid: {exception.Message}");
+                _logger.LogError($"Config file could not be read, Backup restauration will be tried, if that fails a default file will be created.");
                 BackupRestauration("config");
-                _isConfigFileReadable = false;
+                throw new InvalidDataException("Configuration file could not be loaded on this attempt.");
             }
 
             return config;
@@ -193,7 +181,7 @@ namespace MacroPad_application
             return backupDirectory;
         }
 
-        private void CreateBackup()
+        public void CreateBackup()
         {
             string timeStamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
             string configurationDirectoryPath = GetConfigurationDirectoryPath();
@@ -206,16 +194,31 @@ namespace MacroPad_application
             string currentMacrosPath = Path.Combine(configurationDirectoryPath, MacroFileName);
             
             string backupConfigPath = Path.Combine(backupDirectoryPath, configFileName);
-            string backupMacrosPath = Path.Combine(backupConfigPath, macrosFileName);
+            string backupMacrosPath = Path.Combine(backupDirectoryPath, macrosFileName);
 
             try
             {
-                File.Copy(currentConfigPath, currentConfigPath);
-                File.Copy(currentMacrosPath, currentMacrosPath);
+                string errorMessage = "";
+                
+                errorMessage += VerifyFileForBackup(currentConfigPath, "config"); 
+                
+                errorMessage += VerifyFileForBackup(currentMacrosPath, "macros"); 
+
+                if (errorMessage == "ConfigMacro" )
+                    throw new InvalidDataException("Files are not in the correct format.");
+
+                if (errorMessage == "Config")
+                    throw new InvalidDataException("Config file is not in the correct format.");
+                
+                if (errorMessage == "Macro")
+                    throw new InvalidDataException("Macro file is not in the correct format.");
+                
+                File.Copy(currentConfigPath, backupConfigPath);
+                File.Copy(currentMacrosPath, backupMacrosPath);
             }
             catch (Exception exception) when (exception is FileNotFoundException || exception is InvalidDataException)
             {
-                _logger.LogError("Backup could not be created.");
+                _logger.LogError($"Backup could not be created: {exception.Message}");
             }
         }
         
@@ -235,20 +238,23 @@ namespace MacroPad_application
 
                     if (latestConfigBackupPath != null)
                     {
-                        File.Copy(latestConfigBackupPath, configPath);
+                        File.Copy(latestConfigBackupPath, configPath,  true);
                         _logger.LogInfo("Config file backup restored successfully.");
                         _isConfigFileReadable = true;
                     }
+                    else
+                    {
+                        throw new FileNotFoundException();
+                    }
                 }
-                catch (FileNotFoundException)
+                catch (FileNotFoundException exception)
                 {
-                    _logger.LogError("Backup could not be restored.");
+                    _logger.LogError($"Config file backup could not be restored: {exception.Message}");
                     _isConfigFileReadable = false;
                 }
             }
             else if (fileType == "macros")
             {
-                
                 try
                 {
                     string? latestMacroBackupPath = Directory.GetFiles(backupDirectoryPath, "macros_*.json")
@@ -258,17 +264,54 @@ namespace MacroPad_application
 
                     if (latestMacroBackupPath != null)
                     {
-                        File.Copy(latestMacroBackupPath, macroPath);
+                        File.Copy(latestMacroBackupPath, macroPath, true);
                         _logger.LogInfo("Macro file backup restored successfully.");
                         _isMacrosFileReadable = true;
                     }
+                    else
+                    {
+                        throw new FileNotFoundException();
+                    }
                 }
-                catch (FileNotFoundException)
+                catch (FileNotFoundException exception)
                 {
-                    _logger.LogError("Backup could not be restored.");
+                    _logger.LogError($"Macro file backup could not be restored: {exception.Message}");
                     _isMacrosFileReadable = false;
                 }
             }
+        }
+
+        private string VerifyFileForBackup(string currentFilePath, string fileType)
+        {
+            string errorMessage = "";
+            
+            if (fileType == "config")
+            {
+                try
+                {
+                    string fileContents = File.ReadAllText(currentFilePath);
+                    Config? config = JsonSerializer.Deserialize<Config>(fileContents);
+                }
+                catch (JsonException)
+                {
+                    errorMessage += "Config";
+                }
+                
+            }
+            else if (fileType == "macros")
+            {
+                try
+                {
+                    string fileContents = File.ReadAllText(currentFilePath);
+                    Macro[]? macro = JsonSerializer.Deserialize<Macro[]>(fileContents);
+                }
+                catch (JsonException)
+                {
+                    errorMessage += "Macro";
+                }
+            }
+            
+            return errorMessage;
         }
         
         private bool CreateFilesIfNoneExist(string configurationDirectoryPath)
@@ -279,7 +322,7 @@ namespace MacroPad_application
             {
                 string defaultConfigPath = Path.Combine(AppContext.BaseDirectory, "Configuration", "config.json");
                 string configPath = Path.Combine(configurationDirectoryPath, ConfigFileName);
-                File.Copy(defaultConfigPath, configPath);
+                File.Copy(defaultConfigPath, configPath, true);
                 _isConfigFileReadable = true;
                 createSuccess = true;
             }
@@ -288,7 +331,7 @@ namespace MacroPad_application
             {
                 string defaultMacrosPath = Path.Combine(AppContext.BaseDirectory, "Configuration", "macros.json");
                 string marcrosPath = Path.Combine(configurationDirectoryPath, MacroFileName);
-                File.Copy(defaultMacrosPath, marcrosPath);
+                File.Copy(defaultMacrosPath, marcrosPath, true);
                 _isMacrosFileReadable = true;
                 createSuccess = true;
             }
@@ -301,7 +344,6 @@ namespace MacroPad_application
             return createSuccess;
         }
         
-        
         private void AreConfigurationFilesReadable(string configurationDirectoryPath)
         {
             try
@@ -312,8 +354,8 @@ namespace MacroPad_application
             }
             catch (FileNotFoundException)
             {
-                _logger.LogError("Configuration file could not be read.");
-                _isConfigFileReadable = false;
+                _logger.LogError("Configuration file could not be found.");
+                BackupRestauration("config");
             }
 
             try
@@ -324,8 +366,8 @@ namespace MacroPad_application
             }
             catch (FileNotFoundException)
             {
-                _logger.LogError("Macro file could not be read.");
-                _isMacrosFileReadable = false;
+                _logger.LogError("Macro file could not be found.");
+                BackupRestauration("macros");
             }
         }
     }

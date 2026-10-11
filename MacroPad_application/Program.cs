@@ -30,13 +30,16 @@ class Program
         
         Console.WriteLine("- MacroPad is running ...\n");
         logger.LogInfo("MacroPad application started.");
-        
+        configurationReader.CreateBackup();
         // Getting configuration and macros
         Config? definedConfig = null;
         Macro[] definedMacros = [];
         bool readSuccesfull = configurationReader.ReadAllFiles(ref definedConfig, ref definedMacros);
         if (!readSuccesfull || definedConfig == null)
         {
+            Console.WriteLine("Configuration could not be loaded after recovery attempts. Please, reconfigure the settings.");
+            Thread.Sleep(5000);
+            // TODO - Implement opening settings app if everything fails and ask user to reconfigure settings, then continue startup.
             return;
         }
         // --------------------------------
