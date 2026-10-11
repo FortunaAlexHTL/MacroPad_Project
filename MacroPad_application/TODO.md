@@ -2,12 +2,21 @@
 
 Reviewed 2026-10-11. Only unfinished work is listed. Completed discovery/refactoring, default files, the firmware cooldown, and the ID migration are recorded in [the current review](../ID_MIGRATION_2026-10-11.md). Older completion records remain historical.
 
+## Start here: configuration and Settings, one step at a time
+
+1. **Separate loading outcomes.** Replace the ambiguous `ReadAllFiles()` boolean with explicit `Success`, `NeedsSetup`, and `Failed` outcomes. Keep the intention of opening Settings after defaults are created, but report setup as setup rather than a loading error. Do not claim defaults were restored when they were not.
+2. **Make macro saves safe.** Write validated JSON to a temporary file beside the destination, then replace the original only after writing succeeds. Handle `IOException` and `UnauthorizedAccessException`, preserve the previous working file, and clean up failed temporary writes. Test interruption and denied access.
+3. **Complete mapping validation.** Check duplicate device/button pairs, supported buttons and action types, non-null key arrays, supported keycodes and application targets before use. Null mappings and invalid IDs are already rejected; do not reimplement those checks. Decide how intentionally empty setup presets are represented.
+4. **Connect Settings.** Replace both startup-recovery and newly-created-preset placeholders in `Program.cs` with a usable setup workflow. A preset existing does not mean its actions are configured. Coordinate saving and companion restart.
+
+The detailed sections below retain the other release work. Complete one item and test it before starting the next.
+
 ## 1. Finish device setup and ID handling
 
-- [ ] Implement setup-time generation/assignment of unique six-character printable ASCII IDs, excluding reserved `000000`. Read an existing ID first and confirm `OK:<id>` before saving matching macros; duplicate active IDs are rejected but not automatically reassigned.
+- [ ] Harden the existing automatic assignment: exclude reserved `000000` from generated IDs, check saved/offline device IDs as well as current connections, and handle `SET_ID` write failures without stopping other boards. Generation and matching `OK:<id>` confirmation already exist; duplicate active IDs are rejected but not reassigned. Generated IDs use A–Z/0–9; accepted IDs still allow all six printable ASCII characters.
 - [ ] Coordinate serial ownership with the settings app. Provisioning uses `SET_ID:<id>`; there is no separate display-name field.
 - [ ] Back up and explicitly migrate existing user `ArduinoDeviceName` mappings to assigned `ArduinoDeviceId` values. Current loading gives an error for invalid/missing IDs rather than silently guessing a migration.
-- [ ] Verify ID save/reload on physical hardware, including upgrade from old name firmware, changing an assigned ID, and retaining it after power loss. Keep existing mappings coordinated when deliberately changing an ID.
+- [ ] Verify ID save/reload on physical hardware with the current EEPROM layout (marker 0, data 1–7), including upgrade from name/address-32 firmware, changing an assigned ID, and power loss. Keep existing mappings coordinated when deliberately changing an ID.
 
 ## 2. Harden discovery and connection lifetime
 
@@ -22,20 +31,21 @@ Reviewed 2026-10-11. Only unfinished work is listed. Completed discovery/refacto
 
 ## 3. Complete configuration validation and recovery
 
-- [ ] Validate `Config(BaudRate)` against firmware baud 115200. File names are now fixed `config.json` and `macros.json` in Application Support; `MacrosFile` is no longer a setting.
-- [ ] Handle malformed JSON, missing templates, unreadable files/directories, and permission errors with useful messages and a bounded retry or exit. Missing-file copying is implemented; it does not repair corrupted JSON.
-- [ ] Fix `AreFilesReadable` requesting read/write access through `File.Open(..., FileMode.Open)` when only reading is needed; handle access failures explicitly.
-- [ ] Handle a macro file disappearing after the existence check: `ReadMacros` currently returns an empty array after FileNotFoundException, and the caller can incorrectly report success.
-- [ ] Validate duplicate `(ArduinoDeviceId, ButtonCode)` pairs, supported button codes/actions, non-null key arrays, valid macOS keycodes, and application targets. Null entries and invalid IDs are now rejected; other macro validation remains incomplete.
-- [ ] Collect errors before executing any key sequence. Decide whether missing button mappings are allowed and keep editor behavior consistent.
-- [ ] Add repeatable validation/save-failure checks and explicit migration errors for older property casing. Preserve existing user files and defaults during upgrades.
+- [ ] Implement the separate load outcomes and safe macro-save sequence described in **Start here**; update startup handling and error messages together.
+- [ ] Validate `Config(BaudRate)` against firmware baud 115200. File names are fixed `config.json` and `macros.json` in Application Support.
+- [ ] Complete mapping validation described above and collect errors before executing a key sequence. Decide whether missing button mappings and empty keyboard presets mean setup is required.
+- [ ] Finish file-access handling in `ReadConfig`, `AreConfigurationFilesReadable`, default copying and backup-directory creation. `ReadMacros` and restoration already handle expected read/copy failures; other paths can still throw on I/O, permissions, missing templates or failed logging.
+- [ ] Change `AreConfigurationFilesReadable` to request only read access instead of `File.Open(..., FileMode.Open)` read/write access; keep access failure distinct from invalid JSON.
+- [ ] Make restoration copying safe against interrupted replacement. Decide whether an invalid newest backup should lead to trying an older valid backup; currently restoration checks only the newest file.
+- [ ] Decide how to recognize complete config/macros backup pairs and limit retained backups. The two copies can currently leave a partial pair; restoration selects each file independently.
+- [ ] Add repeatable validation, denied-access, interrupted-save and recovery checks to the project workflow. Preserve existing user files during upgrades and explain legacy property/ID migration failures.
 
 ## 4. Action failures and diagnostics
 
 - [ ] Handle expected macro-execution failures separately from serial errors; report unsupported actions and include device ID/button context.
 - [ ] Attempt release of keys/modifiers already pressed when a shortcut fails. Do not automatically replay partial actions.
 - [ ] Use `ProcessStartInfo.ArgumentList`, inspect the macOS `open` exit result, and dispose the process object.
-- [ ] Add bounded timestamped error logging with console fallback.
+- [ ] Bound or rotate the existing timestamped log and avoid reading/rewriting its entire history for every message. Add consistent console fallback so logging failure cannot stop startup or prevent connection cleanup; only some recovery paths currently protect against this.
 - [ ] Verify application paths with spaces, missing applications, invalid shortcuts, modifier combinations, and missing Accessibility permission.
 
 ## 5. Firmware checks
@@ -45,9 +55,9 @@ Reviewed 2026-10-11. Only unfinished work is listed. Completed discovery/refacto
 
 ## 6. Settings and documentation integration
 
-- [ ] Implement the [settings editor](../MacroPad_settings/TODO.md), using shared ID and validation rules and restart-after-save behavior.
+- [ ] Implement the [settings editor](../MacroPad_settings/TODO.md), including the two `Program.cs` launch placeholders, shared ID/validation rules, and restart-after-save behavior.
 - [ ] Fix solution filename casing: `MacroPad_settings/MacroPad_settings.csproj` should match tracked `MacroPad_settings/MacroPad_Settings.csproj`.
-- [ ] Document new discovery/configuration helpers as their behavior stabilizes; review release instructions against the final installed app.
+- [ ] Review release instructions against the final installed app, including first-run setup, backup recovery and save/restart behavior.
 
 ## 7. Installer and GitHub Release
 
@@ -57,3 +67,8 @@ Reviewed 2026-10-11. Only unfinished work is listed. Completed discovery/refacto
 - [ ] Sign/notarize distribution and verify the downloaded install experience.
 - [ ] Test clean install, Accessibility setup, first use, settings edits, upgrades, and uninstall under a fresh account or clean Mac.
 - [ ] Publish tested GitHub Release assets with architecture labels, firmware/setup instructions, and release notes.
+
+## 8. After V1.0 — optional cleanup
+
+- [ ] Reassess `ConfigurationManager` responsibilities if it continues growing. Backup/restoration already live in `BackupManager`; do not split classes merely to reduce a line count. Consider separating preset creation or validation only if it improves clarity.
+- [ ] Stop `IsDeviceConfigured()` after the first matching ID. Its `stopLoop` is currently set to false on a match, so the full array is scanned. Use a loop condition or flag, not a loop `break`; this is a minor efficiency improvement.

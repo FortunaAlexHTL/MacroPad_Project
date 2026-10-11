@@ -7,10 +7,13 @@
 //--------------------------------------//
 
 
+// Description: Coordinates configuration, board discovery, presets, and macro execution.
+
 namespace MacroPad_application;
 using System;
 using System.Diagnostics;
 
+using Backup;
 using Connections;
 using Controllers;
 using Models;
@@ -20,12 +23,13 @@ class Program
     private const string ConfigFileName = "config.json";
     static void Main()
     {
-        // Starting up controllers and configuration reader
+        // Starting up controllers, configuration management and backups
         Logger logger = new Logger();
         MacOSController macOsController = new MacOSController();
         MacroPadController  macroPadController = new MacroPadController();
         ArduinoController  arduinoController = new ArduinoController();
-        ConfigurationReader configurationReader = new ConfigurationReader();
+        ConfigurationManager configurationManager = new ConfigurationManager();
+        BackupManager backupManager = new BackupManager();
         // ------------------------------------------------
         
         Console.WriteLine("- MacroPad is running ...\n");
@@ -33,7 +37,7 @@ class Program
         // Getting configuration and macros
         Config? definedConfig = null;
         Macro[] definedMacros = [];
-        bool readSuccesfull = configurationReader.ReadAllFiles(ref definedConfig, ref definedMacros);
+        bool readSuccesfull = configurationManager.ReadAllFiles(ref definedConfig, ref definedMacros);
         if (!readSuccesfull || definedConfig == null)
         {
             Console.WriteLine("Configuration could not be loaded after recovery attempts. Please, reconfigure the settings.");
@@ -90,9 +94,9 @@ class Program
                 
                 if (!deviceHasMacros)
                 {
-                    deviceHasBeenConfigured = configurationReader.CreateNewMacrosPreset(ref definedMacros, discoveredDevice.Id);
-                    configurationReader.WriteMacros(definedMacros);
-                    configurationReader.CreateBackup();
+                    deviceHasBeenConfigured = configurationManager.CreateNewMacrosPreset(ref definedMacros, discoveredDevice.Id);
+                    configurationManager.WriteMacros(definedMacros);
+                    backupManager.CreateBackup();
 
                     if (deviceHasBeenConfigured)
                     {
@@ -110,7 +114,7 @@ class Program
     /// </summary>
     /// <param name="receivedData">A non-null complete message returned by the connection.</param>
     /// <param name="deviceId">The sending device's ID, used for macro matching and identity checks.</param>
-    /// <param name="definedMacros">The macro mappings loaded at startup.</param>
+    /// <param name="definedMacros">The current macro mappings, including presets added for newly discovered devices.</param>
     /// <param name="macroPadController">Finds the mapping for the device ID and button code.</param>
     /// <param name="macOsController">Executes the selected keyboard or application action.</param>
     /// <remarks>Unknown codes execute no action. Macro-execution errors propagate to the caller.</remarks>
@@ -144,15 +148,26 @@ class Program
         }
     }
 
+    /// <summary>
+    /// Checks whether any mapping uses the supplied device ID.
+    /// </summary>
+    /// <param name="definedMacros">The current mappings, containing no null records.</param>
+    /// <param name="deviceId">The ID to compare exactly, including case and spaces.</param>
+    /// <returns>True if at least one mapping belongs to the device.</returns>
+    /// <remarks>
+    /// Does not verify that all five buttons have usable actions. The current loop scans the entire array.
+    /// </remarks>
     private static bool IsDeviceConfigured(Macro[] definedMacros, string deviceId)
     {
         bool deviceHasMacros = false;
+        bool stopLoop = false;
         
-        for (int i = 0; i < definedMacros.Length; i++)
+        for (int i = 0; i < definedMacros.Length && !stopLoop; i++)
         {
             if (definedMacros[i].ArduinoDeviceId == deviceId)
             {
                 deviceHasMacros = true;
+                stopLoop = false;
             }
         }
         

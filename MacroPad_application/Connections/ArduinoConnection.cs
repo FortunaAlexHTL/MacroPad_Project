@@ -1,3 +1,4 @@
+// Description: Owns one board’s serial connection, listening state, and incoming message buffer.
 
 namespace MacroPad_application.Connections;
 using System.IO.Ports;
@@ -9,6 +10,7 @@ public class ArduinoConnection
     private SerialPort _connection;
     private bool _isListening;
     private string _incomingBuffer = "";
+    private Logger _logger = new Logger();
 
     // Stores discovery information and creates the serial port without opening it.
     public ArduinoConnection(Arduino arduino, int baudrate)
@@ -21,7 +23,7 @@ public class ArduinoConnection
     /// Opens this device's serial port and starts listening with an empty message buffer.
     /// </summary>
     /// <remarks>
-    /// Logs access and I/O failures and disconnects the failed connection. Other errors propagate.
+    /// Reports access and I/O failures and disconnects if error logging succeeds. Logging failures can propagate.
     /// Call on a newly constructed instance; replace instances that have been disconnected.
     /// </remarks>
     public void Open()
@@ -32,15 +34,14 @@ public class ArduinoConnection
             _incomingBuffer = "";
             _isListening = true;
 
-            Console.WriteLine($"- Opened {_device.Id} ...");
+            Console.WriteLine($"- Opened device {_device.Id} ...");
+            _logger.LogInfo($"Opened device {_device.Id} ...");
         }
         catch (Exception exception) when (exception is UnauthorizedAccessException || exception is IOException)
         {
-            Console.WriteLine($"- Could not open {_device.Id}: {exception.Message}.\n");
+            _logger.LogError($"Could not open device {_device.Id}: {exception.Message}");
             Disconnect();
         }
-        
-        
     }
 
     /// <summary>
@@ -63,7 +64,7 @@ public class ArduinoConnection
     /// </returns>
     /// <remarks>
     /// Retains incomplete text and additional lines for later calls. I/O, invalid-operation,
-    /// and overflow failures are logged and disconnect this device; a timeout leaves its state unchanged.
+    /// and overflow failures are reported to the console and disconnect this device; a timeout leaves its state unchanged.
     /// The overflow handling covers the observed ReadExisting failure during unplugging.
     /// Does not interpret messages or execute macros. The incoming buffer currently has no size limit.
     /// </remarks>

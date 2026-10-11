@@ -6,7 +6,7 @@ Reviewed 2026-10-11. The settings project remains a console scaffold. The compan
 
 - [ ] Coordinate exclusive port ownership with the companion app during setup.
 - [ ] Identify boards through `WHO_ARE_YOU?` / `MACROPAD:<id>`; show ID and port, preserving all six characters exactly. `000000` means setup is required.
-- [ ] Generate unique six-character printable ASCII IDs, excluding `000000`; avoid assigning the same ID to multiple boards. Preserve an already assigned ID unless the user deliberately changes it.
+- [ ] Coordinate with the companion’s existing automatic A–Z/0–9 ID assignment instead of creating competing setup flows. Exclude `000000` and check stored IDs as well as connected boards; preserve an assigned ID unless deliberately changed. Continue accepting six printable ASCII characters.
 - [ ] Send `SET_ID:<id>`, parse the first colon only, and confirm matching `OK:<id>`. Handle error replies, timeouts, disconnects, and intervening button messages.
 - [ ] Verify EEPROM persistence and update stored macro IDs deliberately when reassigning a device. No separate naming workflow is planned.
 
@@ -17,10 +17,12 @@ Reviewed 2026-10-11. The settings project remains a console scaffold. The compan
 - [ ] Select a device by ID and display its five button mappings. Edit keyboard or application actions in memory and allow cancellation.
 - [ ] Use exact JSON fields `ArduinoDeviceId`, `ButtonCode`, `ActionType`, `Keys`, and `ApplicationPath`. Escape quotes/backslashes normally; preserve significant spaces and leading zeroes in IDs.
 - [ ] Validate ID/button uniqueness and all action fields consistently with the companion app. Provide migration guidance for legacy name-based mappings; never invent their new IDs silently.
-- [ ] Save indented JSON without destroying the previous valid file if writing fails. Explain that the companion app must restart after edits.
+- [ ] Save validated, indented JSON through a temporary file and replacement, handling I/O and permission failures while preserving the previous valid file. Explain that the companion app must restart after edits.
 - [ ] Verify unchanged round trips and one edited shortcut/application action end to end; test cancellation and failed saves.
 
 ## 3. Complete the workflow
+
+- [ ] Connect the companion’s startup `NeedsSetup` flow and new-device preset flow to the editor. Keep setup-required, failed loading, and successful loading distinct; an empty preset is not finished configuration.
 
 - [ ] Load the bundled keycode reference, display readable keys, and retain numeric macOS keycodes.
 - [ ] Support variable-length shortcuts and left/right modifiers; explain sequential ordinary-key behavior.

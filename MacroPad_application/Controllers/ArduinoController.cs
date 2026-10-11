@@ -1,3 +1,4 @@
+// Description: Discovers serial boards, assigns unconfigured IDs, and manages connection arrays.
 
 namespace MacroPad_application.Controllers;
 
@@ -45,7 +46,7 @@ public class ArduinoController
     /// Lists USB modem port candidates not already used by a listening connection.
     /// </summary>
     /// <param name="arduinoConnections">Connections whose listening port paths should be excluded.</param>
-    /// <returns>Available candidate paths beginning with /dev/cu.usbmodem, possibly an empty array.</returns>
+    /// <returns>Candidate paths beginning with /dev/cu.usbmodem or the development-only /tmp/cu.usbmodem prefix.</returns>
     /// <remarks>Does not open ports or perform the handshake; candidates are not yet confirmed MacroPads.</remarks>
     public string[] GetNewPortNames(ArduinoConnection[] arduinoConnections)
     {
@@ -75,6 +76,15 @@ public class ArduinoController
         return portNames;
     }
 
+    /// <summary>
+    /// Opens one candidate port and begins its startup wait when discovery is idle.
+    /// </summary>
+    /// <param name="portName">The serial port path to probe.</param>
+    /// <param name="baudRate">The serial speed, which must match the firmware.</param>
+    /// <remarks>
+    /// Repeated calls during discovery do nothing. Opening is synchronous.
+    /// Handled access and port failures reset discovery; call UpdateDiscovery to advance the handshake.
+    /// </remarks>
     public void StartDiscovery(string portName, int baudRate)
     {
         if (_discoveryStage == DiscoveryStage.Idle)
@@ -106,6 +116,17 @@ public class ArduinoController
         }
     }
 
+    /// <summary>
+    /// Advances startup, identity probing and optional ID assignment for the current candidate.
+    /// </summary>
+    /// <param name="arduinoConnections">Existing connections used to check generated IDs for collisions.</param>
+    /// <returns>An identified device after a valid MACROPAD reply or matching assignment confirmation; otherwise null.</returns>
+    /// <remarks>
+    /// Waits two seconds for startup and allows two seconds for each reply stage. Processes at most
+    /// one buffered line per call. Invalid IDs trigger generation and SET_ID; successful discovery closes
+    /// the probe port before the caller opens a listening connection. The SET_ID write is currently
+    /// outside the write-error handlers, and generated IDs are not checked against saved offline devices.
+    /// </remarks>
     public Arduino? UpdateDiscovery(ArduinoConnection[] arduinoConnections)
     {
         Arduino? discoveredDevice = null;
@@ -255,6 +276,15 @@ public class ArduinoController
         return discoveredDevice;
     }
 
+    /// <summary>
+    /// Checks whether the supplied connections contain an ID.
+    /// </summary>
+    /// <param name="arduinoConnections">The connections to search, containing no null entries.</param>
+    /// <param name="id">The proposed ID to compare exactly.</param>
+    /// <returns>True when none of the supplied device records use the ID.</returns>
+    /// <remarks>
+    /// Checks all supplied records, regardless of listening status; does not inspect saved macro mappings.
+    /// </remarks>
     private bool CheckIdAvailability(ArduinoConnection[] arduinoConnections, string id)
     {
         bool available = true;
@@ -270,6 +300,13 @@ public class ArduinoController
         return available;
     }
     
+    /// <summary>
+    /// Generates six characters using uppercase letters and decimal digits.
+    /// </summary>
+    /// <returns>A randomly generated ID; uniqueness and the reserved value 000000 are not checked here.</returns>
+    /// <remarks>
+    /// RandomNumberGenerator selects each character independently. The caller checks connection collisions.
+    /// </remarks>
     private string GenerateDeviceId()
     {
         const string characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -283,11 +320,21 @@ public class ArduinoController
         return new string(id);
     }
     
+    /// <summary>
+    /// Checks whether a candidate is being processed.
+    /// </summary>
+    /// <returns>True in any discovery stage other than Idle.</returns>
     public bool IsDiscoveryRunning()
     {
         return _discoveryStage != DiscoveryStage.Idle;
     }
     
+    /// <summary>
+    /// Returns discovery to idle, disposes the candidate port and clears buffered data and timing.
+    /// </summary>
+    /// <remarks>
+    /// Disposal errors propagate. The assigned-ID field is retained until a later assignment replaces it.
+    /// </remarks>
     private void ResetDiscovery()
     {
         _discoveryStage = DiscoveryStage.Idle;
@@ -301,6 +348,17 @@ public class ArduinoController
         _discoveryTime.Reset();
     }
     
+    /// <summary>
+    /// Opens and appends a discovered device when its ID and port are acceptable.
+    /// </summary>
+    /// <param name="existingConnections">Existing non-null connection objects to preserve.</param>
+    /// <param name="discoveredDevice">The identified port and device ID.</param>
+    /// <param name="baudRate">The listening port’s baud rate.</param>
+    /// <returns>A new array after a successful addition; otherwise the original array.</returns>
+    /// <remarks>
+    /// Rejects invalid IDs, duplicate active IDs on another port, and already-listening ports.
+    /// Opens a fresh SerialPort rather than transferring the discovery port.
+    /// </remarks>
     public ArduinoConnection[] AddConnection(ArduinoConnection[] existingConnections, Arduino discoveredDevice, int baudRate)
     {
         if (!Arduino.IsValidId(discoveredDevice.Id))
@@ -344,6 +402,14 @@ public class ArduinoController
         return existingConnections;
     }
 
+    /// <summary>
+    /// Removes entries whose listening flag is false, preserving the remaining order.
+    /// </summary>
+    /// <param name="existingConnections">The non-null connection objects to filter.</param>
+    /// <returns>The original array if all entries are active; otherwise a new array of active connections.</returns>
+    /// <remarks>
+    /// Does not probe hardware or dispose removed objects; disconnection must already have cleaned them up.
+    /// </remarks>
     public ArduinoConnection[] RemoveInactiveConnections(ArduinoConnection[] existingConnections)
     {
         int activeConnectionsCount = 0;

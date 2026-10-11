@@ -7,7 +7,7 @@
 const int DeviceIdLength = 6;
 const int CommandBufferSize = 7 + DeviceIdLength + 1; // SET_ID: + six characters + ending zero.
 const byte SavedIdMarker = 166;
-const int SavedIdAddress = 0; // Keep the old name at addresses 0-25 untouched.
+const int SavedIdAddress = 0; // ID marker at address 0; ID data follows at addresses 1-7.
 
 char deviceId[DeviceIdLength + 1] = "000000";
 char commandBuffer[CommandBufferSize];
@@ -73,7 +73,7 @@ bool IsValidId(const char id[]) {
   return valid && length == DeviceIdLength && strcmp(id, "000000") != 0;
 }
 
-// EEPROM address 32 marks a completed ID save; addresses 33-39 hold six characters and zero.
+// EEPROM address 0 marks a completed ID save; addresses 1-7 hold six characters and zero.
 // An unused or invalid saved ID leaves 000000 in place; legacy name storage is not loaded.
 void LoadDeviceId() {
   if(EEPROM.read(SavedIdAddress) == SavedIdMarker)

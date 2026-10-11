@@ -2,7 +2,7 @@
 
 Five Arduino buttons trigger keyboard shortcuts or application launches on macOS through a C#/.NET 10 companion app.
 
-[Demo](demoVideo/MacroPad_Demo.MOV) · [Firmware](onHardwareProgram/MacroPad/MacroPad.ino) · [Serial protocol and ID setup](onHardwareProgram/SerialProtocol.md) · [Example macros](MacroPad_application/Configuration/macros.json)
+[Demo](demoVideo/MacroPad_Demo.MOV) · [Firmware](onHardwareProgram/MacroPad/MacroPad.ino) · [Serial protocol and ID setup](onHardwareProgram/SerialProtocol.md) · [Example macros](MacroPad_application/ConfigurationFiles/macros.json)
 
 ## Wiring and firmware
 
@@ -24,11 +24,11 @@ Each board uses a six-character printable ASCII ID, not a device name. Letters, 
 
 Close the companion app and open Arduino Serial Monitor at 115200 baud with Newline. Wait for startup, then send `SET_ID:000001` for the first board. Confirm `OK:000001` and `WHO_ARE_YOU?` → `MACROPAD:000001`. Close Serial Monitor before running the app.
 
-The ID is stored in EEPROM. Old saved names are preserved separately but not reused as IDs. Automatic assignment through a settings tool is not implemented. See the [protocol guide](onHardwareProgram/SerialProtocol.md) for migration, special characters, and persistence checks.
+The ID is stored in EEPROM starting at address 0. The companion can assign a random six-character A–Z/0–9 ID when a board reports an invalid or unconfigured ID, then wait for matching confirmation. Collision checks currently cover connected records, not saved offline devices. The Settings setup interface is not implemented. Old name storage overlaps the current layout and is not preserved as a separate record. See the [protocol guide](onHardwareProgram/SerialProtocol.md) for migration, special characters, and persistence checks.
 
 ## Configuration and running
 
-Install the .NET 10 SDK for development. The app creates `~/Library/Application Support/MacroPad/` and copies bundled defaults when either configuration file is missing. Existing files are preserved. Both files are read at startup; restart after editing them.
+Install the .NET 10 SDK for development. The app creates `~/Library/Application Support/MacroPad/`. Missing or invalid files can trigger restoration from the newest backup; default files from `ConfigurationFiles` are copied when readable flags remain false. Recovery can overwrite existing invalid files. Both files are read at startup; restart after editing them. When defaults are created, startup currently stops and asks for configuration; automatic opening of Settings remains unfinished. Make a separate backup before manual edits.
 
 `config.json` now contains only:
 
@@ -52,7 +52,7 @@ Install the .NET 10 SDK for development. The app creates `~/Library/Application 
 ]
 ```
 
-Use `Keyboard` with a variable-length macOS keycode array, or `Application` with an empty `Keys` array and an application path. The [bundled mappings](MacroPad_application/Configuration/macros.json) target ID `000001`; review the actions and application paths before use. IDs are strings, preserving leading zeroes. The old `ArduinoDeviceName` property is no longer accepted as an identity; assign a board ID and update existing mappings explicitly.
+Use `Keyboard` with a variable-length macOS keycode array, or `Application` with an empty `Keys` array and an application path. The [bundled mappings](MacroPad_application/ConfigurationFiles/macros.json) target ID `000001`; review the actions and application paths before use. IDs are strings, preserving leading zeroes. The old `ArduinoDeviceName` property is no longer accepted as an identity; assign a board ID and update existing mappings explicitly.
 
 Supported modifiers are left/right Command (55/54), Shift (56/60), Option (58/61), and Control (59/62). Ordinary keys run in sequence while the modifiers are held. See the [keycode reference](MacroPad_settings/keycodes.ini).
 
@@ -71,14 +71,16 @@ The app scans candidate ports approximately every three seconds when its previou
 - `Connections/ArduinoConnection.cs`: one board's serial port, listening state, and receive buffer.
 - `Controllers/MacroPadController.cs`: lookup by `(ArduinoDeviceId, ButtonCode)`.
 - `Controllers/MacOSController.cs`: keyboard events and application launches.
-- `ConfigurationReader.cs`: JSON loading and missing-file defaults.
+- `ConfigurationManager.cs`: JSON loading/saving, defaults, recovery coordination and empty device presets.
+- `Backup/BackupManager.cs`: timestamped backups and validated restoration of the newest backup.
+- `Logger.cs`: timestamped file logging under `~/Library/Logs/MacroPad/`.
 - `MacroPad_settings`: console scaffold; an editor is not implemented yet.
 
 ## Development status
 
 This is a development build, not an installer release. One physical board has been tested by the author; multiple-board logic has been simulated, not established by physical multi-board tests. Button 5's earlier missing presses were resolved by repairing a loose breadboard connection.
 
-Remaining work includes setup-time unique ID generation, fuller configuration validation, bounded input buffers, graceful shutdown, action-failure recovery, the settings editor, and a tested macOS `.pkg`. Missing-file defaults exist, but malformed JSON and other file-access failures still need better handling. Current development code also searches `/tmp/cu.usbmodem*` for virtual boards; remove or explicitly gate that before distribution.
+Remaining work includes hardening ID assignment, separating setup from load failure, safe configuration writes, fuller mapping validation, bounded input buffers/logs, graceful shutdown, action-failure recovery, the settings editor, and a tested macOS `.pkg`. Null mappings and invalid IDs are rejected, and backup restoration exists; configuration access failures are not yet handled consistently across all paths. Current development code also searches `/tmp/cu.usbmodem*` for virtual boards; remove or explicitly gate that before distribution.
 
 See the [application roadmap](MacroPad_application/TODO.md), [settings roadmap](MacroPad_settings/TODO.md), and [ID migration review](ID_MIGRATION_2026-10-11.md).
 
