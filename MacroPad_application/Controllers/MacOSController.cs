@@ -13,7 +13,7 @@ public class MacOSController
     const ulong ShiftFlag = 0x00020000;
     const ulong OptionFlag = 0x00080000;
     const ulong ControlFlag = 0x00040000;
-        
+
     /// <summary>
     /// Creates a native keyboard event for a key press or release.
     /// </summary>
@@ -135,7 +135,7 @@ public class MacOSController
     private ulong GetModifierFlag(ushort keyCode)
     {
         ulong flag;
-            
+
         switch (keyCode)
         {
             case 55: case 54:
@@ -154,72 +154,135 @@ public class MacOSController
                 flag = 0;
                 break;
         }
-            
+
         return flag;
     }
-        
-    /// <summary>
-    /// Executes a keyboard macro or requests an application launch according to its action type.
-    /// </summary>
-    /// <param name="macro">
-    /// The selected macro. Keyboard actions require a non-null key array with values that fit
-    /// in ushort; application actions require a nonblank application path.
-    /// </param>
-    /// <remarks>
-    /// Recognizes the exact action types "Keyboard" and "Application"; other types perform no action.
-    /// Keyboard actions press modifiers first, send ordinary keys in order, then release modifiers
-    /// in reverse order. Application actions invoke macOS open and report a blank path to the console,
-    /// but do not check the launch result. Errors propagate to the caller; releasing held modifiers
-    /// after an execution error is not guaranteed.
-    /// </remarks>
-    /// <exception cref="OverflowException">A keyboard code is outside the ushort range.</exception>
-    /// <exception cref="InvalidOperationException">CoreGraphics could not create a keyboard event.</exception>
+
+    /// <summary>Executes the selected keyboard or application action.</summary>
+    /// <param name="macro">The macro selected for the device and button.</param>
+    /// <remarks>Expected failures are reported by the application loop; partial actions are never replayed.</remarks>
     public void ExecuteMacro(Macro macro)
     {
-        ulong modifierFlags = 0;
         if (macro.ActionType == "Application")
         {
-            if (!string.IsNullOrWhiteSpace(macro.ApplicationPath))
-            {
-                Process.Start("open", $"-a \"{macro.ApplicationPath}\"");
-            }
-            else
-            {
-                Console.WriteLine("No application path configured.");
-            }
+            OpenApplication(macro.ApplicationPath);
         }
         else if (macro.ActionType == "Keyboard")
         {
-            int[] receivedMacro = macro.Keys;
-            
-            for (int i = 0; i < receivedMacro.Length; i++)
+            ExecuteKeyboard(macro.Keys);
+        }
+        else
+        {
+            throw new InvalidDataException($"Unsupported action type: {macro.ActionType}.");
+        }
+    }
+
+    /// <summary>Requests an application launch using macOS open.</summary>
+    /// <param name="applicationPath">The configured application path.</param>
+    /// <remarks>Arguments are passed separately so spaces and quotes stay part of the path. Does not wait for open to exit.</remarks>
+    private void OpenApplication(string? applicationPath)
+    {
+        if (string.IsNullOrWhiteSpace(applicationPath))
+        {
+            throw new InvalidDataException("No application path configured.");
+        }
+
+        ProcessStartInfo startInfo = new ProcessStartInfo("open");
+        startInfo.ArgumentList.Add("-a");
+        startInfo.ArgumentList.Add(applicationPath);
+        // Disposing this handle does not close the launched application.
+        using (Process? process = Process.Start(startInfo))
+        {
+            if (process == null)
             {
-                ushort keyCode = Convert.ToUInt16(receivedMacro[i]);
-                if (IsModifier(keyCode))
+                throw new InvalidOperationException("Could not start macOS open.");
+            }
+        }
+    }
+
+    /// <summary>Converts all keycodes before any native event is posted.</summary>
+    /// <param name="keys">Configured numeric keycodes.</param>
+    /// <returns>Keycodes that fit the native unsigned 16-bit parameter.</returns>
+    /// <remarks>This checks the numeric range, not whether every code represents a supported physical key.</remarks>
+    private ushort[] ReadKeyCodes(int[] keys)
+    {
+        if (keys == null)
+        {
+            throw new InvalidDataException("Keyboard actions require a Keys array.");
+        }
+
+        ushort[] keyCodes = new ushort[keys.Length];
+        for (int i = 0; i < keys.Length; i++)
+        {
+            if (keys[i] < ushort.MinValue || keys[i] > ushort.MaxValue)
+            {
+                throw new InvalidDataException($"Keycode {keys[i]} is outside the allowed numeric range.");
+            }
+            keyCodes[i] = (ushort)keys[i];
+        }
+        return keyCodes;
+    }
+
+    /// <summary>Presses modifiers, types ordinary keys in order and releases modifiers in reverse order.</summary>
+    /// <param name="keys">The configured key sequence.</param>
+    /// <remarks>Finally attempts to release keys still marked as pressed when a later event fails.</remarks>
+    private void ExecuteKeyboard(int[] keys)
+    {
+        ushort[] keyCodes = ReadKeyCodes(keys);
+        bool[] pressedKeys = new bool[keyCodes.Length];
+        ulong modifierFlags = 0;
+
+        try
+        {
+            for (int i = 0; i < keyCodes.Length; i++)
+            {
+                if (IsModifier(keyCodes[i]))
                 {
-                    modifierFlags |= GetModifierFlag(keyCode);
-                    KeyDown(keyCode, modifierFlags);
+                    ulong flagsWithModifier = modifierFlags | GetModifierFlag(keyCodes[i]);
+                    KeyDown(keyCodes[i], flagsWithModifier);
+                    modifierFlags = flagsWithModifier;
+                    pressedKeys[i] = true;
                 }
             }
 
-            for (int i = 0; i < receivedMacro.Length; i++)
+            for (int i = 0; i < keyCodes.Length; i++)
             {
-                ushort keyCode = Convert.ToUInt16(receivedMacro[i]);
-                if (!IsModifier(keyCode))
+                if (!IsModifier(keyCodes[i]))
                 {
-                    KeyDown(keyCode, modifierFlags);
-                    KeyUp(keyCode, modifierFlags);
+                    KeyDown(keyCodes[i], modifierFlags);
+                    pressedKeys[i] = true;
+                    KeyUp(keyCodes[i], modifierFlags);
+                    pressedKeys[i] = false;
                 }
             }
+        }
+        finally
+        {
+            ReleasePressedKeys(keyCodes, pressedKeys, modifierFlags);
+        }
+    }
 
-            for (int i = receivedMacro.Length - 1; i >= 0; i--)
+    /// <summary>Attempts every remaining key release even if one release fails.</summary>
+    /// <param name="keyCodes">The converted sequence.</param>
+    /// <param name="pressedKeys">Which keys were pressed but have not yet been released.</param>
+    /// <param name="modifierFlags">The flags active when execution ended.</param>
+    private void ReleasePressedKeys(ushort[] keyCodes, bool[] pressedKeys, ulong modifierFlags)
+    {
+        Logger logger = new Logger();
+        for (int i = keyCodes.Length - 1; i >= 0; i--)
+        {
+            if (pressedKeys[i])
             {
-                ushort keyCode = Convert.ToUInt16(receivedMacro[i]);
-                if (IsModifier(keyCode))
+                try
                 {
-                    KeyUp(keyCode, modifierFlags);
-                    modifierFlags &= ~GetModifierFlag(keyCode);
+                    KeyUp(keyCodes[i], modifierFlags);
                 }
+                catch (Exception exception) when (exception is InvalidOperationException || exception is DllNotFoundException
+                                                  || exception is EntryPointNotFoundException)
+                {
+                    logger.LogError($"Could not release key {keyCodes[i]}: {exception.Message}");
+                }
+                modifierFlags &= ~GetModifierFlag(keyCodes[i]);
             }
         }
     }

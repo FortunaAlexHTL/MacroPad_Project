@@ -12,18 +12,15 @@ public record Arduino(
     /// <returns>True for six printable ASCII characters other than the unconfigured value 000000.</returns>
     public static bool IsValidId(string? id)
     {
-        if (id == null)
+        bool valid = false;
+        if (id != null)
         {
-            return false;
+            valid = id.Length == 6 && id != "000000";
+            for (int i = 0; valid && i < id.Length; i++)
+            {
+                valid = id[i] >= ' ' && id[i] <= '~';
+            }
         }
-
-        bool valid = id.Length == 6 && id != "000000";
-        
-        for (int i = 0; valid && i < id.Length; i++)
-        {
-            valid = id[i] >= ' ' && id[i] <= '~';
-        }
-
         return valid;
     }
 }

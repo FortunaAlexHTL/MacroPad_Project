@@ -6,13 +6,11 @@
 //               MacroPad               //
 //--------------------------------------//
 
-
-// Description: Coordinates configuration, board discovery, presets, and macro execution.
-
+// Description: Coordinates configuration, connected boards and macro execution.
 namespace MacroPad_application;
-using System;
-using System.Diagnostics;
 
+using System.ComponentModel;
+using System.Diagnostics;
 using Backup;
 using Connections;
 using Controllers;
@@ -20,112 +18,193 @@ using Models;
 
 class Program
 {
-    private const string ConfigFileName = "config.json";
-    static void Main()
+    private static volatile bool _isRunning = true;
+
+    static void Main(string[] args)
     {
-        // Starting up controllers, configuration management and backups
         Logger logger = new Logger();
-        MacOSController macOsController = new MacOSController();
-        MacroPadController  macroPadController = new MacroPadController();
-        ArduinoController  arduinoController = new ArduinoController();
         ConfigurationManager configurationManager = new ConfigurationManager();
         BackupManager backupManager = new BackupManager();
-        // ------------------------------------------------
-        
         Console.WriteLine("- MacroPad is running ...\n");
         logger.LogInfo("MacroPad application started.");
-        // Getting configuration and macros
-        Config? definedConfig = null;
-        Macro[] definedMacros = [];
-        bool readSuccesfull = configurationManager.ReadAllFiles(ref definedConfig, ref definedMacros);
-        if (!readSuccesfull || definedConfig == null)
+
+        Config? config = null;
+        Macro[] macros = [];
+        bool loaded = configurationManager.ReadAllFiles(ref config, ref macros, out bool defaultsCreated);
+        if (!loaded || config == null)
         {
-            Console.WriteLine("Configuration could not be loaded after recovery attempts. Please, reconfigure the settings.");
-            Thread.Sleep(5000);
-            // TODO - Implement opening settings app if everything fails and ask user to reconfigure settings, then continue startup.
-            return;
+            Console.WriteLine("Configuration could not be loaded. Check the log and configuration files.");
         }
-        // --------------------------------
-        ArduinoConnection[] arduinoConnections = [];
-        Stopwatch discoveryTimer = Stopwatch.StartNew();
-        
-        string[] candidatePortNames = [];
-        int candidateIndex = 0;
-        
-        Console.WriteLine("- Searching for device ...");
-        logger.LogInfo("Search for devices started.");
-        
-        while (readSuccesfull)
+        else if (defaultsCreated)
         {
-            for (int i = 0; i < arduinoConnections.Length; i++)
-            {
-                string? receivedData = arduinoConnections[i].ReadMessage();
-                    
-                if (receivedData != null)
-                {
-                    ProcessMessage(receivedData, arduinoConnections[i].GetDevice().Id, definedMacros, macroPadController, macOsController);
-                }
-            }
-            
-            arduinoConnections = arduinoController.RemoveInactiveConnections(arduinoConnections);
-
-            if (discoveryTimer.ElapsedMilliseconds >= 3000 && !arduinoController.IsDiscoveryRunning() && candidateIndex >= candidatePortNames.Length)
-            {
-                candidatePortNames = arduinoController.GetNewPortNames(arduinoConnections);
-                candidateIndex = 0;
-                    
-                discoveryTimer.Restart();
-            }
-
-            if (!arduinoController.IsDiscoveryRunning() && candidateIndex < candidatePortNames.Length)
-            {
-                arduinoController.StartDiscovery(candidatePortNames[candidateIndex], definedConfig.BaudRate);
-                candidateIndex++;
-            }
-                
-            Arduino? discoveredDevice = arduinoController.UpdateDiscovery(arduinoConnections);
-
-            if (discoveredDevice != null)
-            {
-                arduinoConnections = arduinoController.AddConnection(arduinoConnections, discoveredDevice, definedConfig.BaudRate);
-
-                bool deviceHasMacros = IsDeviceConfigured(definedMacros, discoveredDevice.Id);
-                bool deviceHasBeenConfigured = false;
-                
-                if (!deviceHasMacros)
-                {
-                    deviceHasBeenConfigured = configurationManager.CreateNewMacrosPreset(ref definedMacros, discoveredDevice.Id);
-                    configurationManager.WriteMacros(definedMacros);
-                    backupManager.CreateBackup();
-
-                    if (deviceHasBeenConfigured)
-                    {
-                        // TODO - open settings app for configuring the Macros
-                    }
-                }
-            }
-
-            Thread.Sleep(10);
+            Console.WriteLine("Default files were created. Configure your settings before restarting.");
+            // TODO: Open Settings for first-time configuration.
+        }
+        else if (config.BaudRate <= 0)
+        {
+            logger.LogError("BaudRate must be a positive number. Check config.json.");
+        }
+        else
+        {
+            RunApplication(config, macros, configurationManager, backupManager, logger);
         }
     }
 
-    /// <summary>
-    /// Routes a complete device message to macro execution or identity and invalid-message reporting.
-    /// </summary>
-    /// <param name="receivedData">A non-null complete message returned by the connection.</param>
-    /// <param name="deviceId">The sending device's ID, used for macro matching and identity checks.</param>
-    /// <param name="definedMacros">The current macro mappings, including presets added for newly discovered devices.</param>
-    /// <param name="macroPadController">Finds the mapping for the device ID and button code.</param>
-    /// <param name="macOsController">Executes the selected keyboard or application action.</param>
-    /// <remarks>Unknown codes execute no action. Macro-execution errors propagate to the caller.</remarks>
-    private static void ProcessMessage(string receivedData, string deviceId, Macro[] definedMacros, MacroPadController macroPadController,
-        MacOSController macOsController)
+    /// <summary>Coordinates serial reading and staged discovery until cancellation.</summary>
+    /// <param name="config">The loaded serial configuration.</param>
+    /// <param name="macros">The current macro mappings.</param>
+    /// <param name="configurationManager">Saves presets for new devices.</param>
+    /// <param name="backupManager">Backs up successfully saved presets.</param>
+    /// <param name="logger">Reports errors without stopping other devices.</param>
+    private static void RunApplication(Config config, Macro[] macros, ConfigurationManager configurationManager,
+        BackupManager backupManager, Logger logger)
+    {
+        ArduinoController arduinoController = new ArduinoController();
+        MacroPadController macroPadController = new MacroPadController();
+        MacOSController macOsController = new MacOSController();
+        ArduinoConnection[] connections = [];
+        string[] candidatePorts = [];
+        int candidateIndex = 0;
+        Stopwatch discoveryTimer = Stopwatch.StartNew();
+
+        _isRunning = true;
+        Console.CancelKeyPress += HandleCancel;
+        Console.WriteLine("- Searching for devices ...");
+
+        try
+        {
+            while (_isRunning)
+            {
+                ReadConnections(connections, macros, macroPadController, macOsController, logger);
+                connections = arduinoController.RemoveInactiveConnections(connections);
+
+                bool candidatesFinished = candidateIndex >= candidatePorts.Length;
+                if (discoveryTimer.ElapsedMilliseconds >= 3000 &&
+                    !arduinoController.IsDiscoveryRunning() && candidatesFinished)
+                {
+                    candidatePorts = arduinoController.GetNewPortNames(connections);
+                    candidateIndex = 0;
+                    discoveryTimer.Restart();
+                }
+
+                if (!arduinoController.IsDiscoveryRunning() && candidateIndex < candidatePorts.Length)
+                {
+                    arduinoController.StartDiscovery(candidatePorts[candidateIndex], config.BaudRate);
+                    candidateIndex++;
+                }
+
+                Arduino? device = arduinoController.UpdateDiscovery(connections);
+                if (device != null)
+                {
+                    connections = arduinoController.AddConnection(connections, device, config.BaudRate);
+                    if (arduinoController.IsPortAlreadyOpen(device.Port, connections))
+                    {
+                        macros = EnsureDevicePreset(macros, device.Id, configurationManager, backupManager, logger);
+                    }
+                }
+
+                Thread.Sleep(10);
+            }
+        }
+        finally
+        {
+            // finally also runs if an unexpected error leaves the application loop.
+            Console.CancelKeyPress -= HandleCancel;
+            arduinoController.ResetDiscovery();
+            for (int i = 0; i < connections.Length; i++)
+            {
+                connections[i].Disconnect();
+            }
+            Console.WriteLine("\n- Stopping ...");
+        }
+    }
+
+    /// <summary>Requests that the main loop stop after its current operation.</summary>
+    /// <param name="sender">The console event source.</param>
+    /// <param name="eventArgs">Cancels immediate termination so finally can close the ports.</param>
+    private static void HandleCancel(object? sender, ConsoleCancelEventArgs eventArgs)
+    {
+        eventArgs.Cancel = true;
+        _isRunning = false;
+    }
+
+    /// <summary>Processes at most one message per connection without letting an action failure stop other boards.</summary>
+    /// <param name="connections">Current serial connections.</param>
+    /// <param name="macros">Current macro mappings.</param>
+    /// <param name="macroPadController">Finds the configured action.</param>
+    /// <param name="macOsController">Executes the action.</param>
+    /// <param name="logger">Records action failures with device context.</param>
+    private static void ReadConnections(ArduinoConnection[] connections, Macro[] macros,
+        MacroPadController macroPadController, MacOSController macOsController, Logger logger)
+    {
+        for (int i = 0; i < connections.Length; i++)
+        {
+            string? message = connections[i].ReadMessage();
+            if (message != null)
+            {
+                try
+                {
+                    ProcessMessage(message, connections[i].Device.Id, macros, macroPadController, macOsController);
+                }
+                catch (Exception exception) when (exception is InvalidDataException || exception is InvalidOperationException
+                                                  || exception is Win32Exception || exception is IOException
+                                                  || exception is UnauthorizedAccessException || exception is ArgumentException
+                                                  || exception is DllNotFoundException || exception is EntryPointNotFoundException)
+                {
+                    logger.LogError($"Action failed for device {connections[i].Device.Id}, message '{message}': {exception.Message}");
+                }
+            }
+        }
+    }
+
+    /// <summary>Creates and saves the existing five-button preset only when a device has no mappings.</summary>
+    /// <param name="macros">The mappings to preserve.</param>
+    /// <param name="deviceId">The newly connected device ID.</param>
+    /// <param name="configurationManager">Creates and saves the preset.</param>
+    /// <param name="backupManager">Backs up the saved files.</param>
+    /// <param name="logger">Reports a failed save.</param>
+    /// <returns>The enlarged array after a successful save, or the original array on failure.</returns>
+    private static Macro[] EnsureDevicePreset(Macro[] macros, string deviceId,
+        ConfigurationManager configurationManager, BackupManager backupManager, Logger logger)
+    {
+        Macro[] result = macros;
+        if (!IsDeviceConfigured(macros, deviceId))
+        {
+            Macro[] updatedMacros = macros;
+            configurationManager.CreateNewMacrosPreset(ref updatedMacros, deviceId);
+            bool saved = false;
+            try
+            {
+                configurationManager.WriteMacros(updatedMacros);
+                saved = true;
+            }
+            catch (InvalidDataException exception)
+            {
+                logger.LogError($"Could not save presets for {deviceId}: {exception.Message}");
+            }
+
+            if (saved)
+            {
+                backupManager.CreateBackup();
+                // TODO: Open Settings so the user can fill in the empty actions.
+                result = updatedMacros;
+            }
+        }
+        return result;
+    }
+
+    /// <summary>Routes button codes to macros and reports identity or invalid messages.</summary>
+    /// <param name="receivedData">One complete serial message.</param>
+    /// <param name="deviceId">The sending device ID.</param>
+    /// <param name="definedMacros">Current mappings.</param>
+    /// <param name="macroPadController">Finds the matching mapping.</param>
+    /// <param name="macOsController">Executes the selected action.</param>
+    private static void ProcessMessage(string receivedData, string deviceId, Macro[] definedMacros,
+        MacroPadController macroPadController, MacOSController macOsController)
     {
         if (int.TryParse(receivedData, out int buttonCode))
         {
-            Macro? macro = macroPadController.FindMacro(
-                definedMacros, buttonCode, deviceId);
-
+            Macro? macro = macroPadController.FindMacro(definedMacros, buttonCode, deviceId);
             if (macro != null)
             {
                 macOsController.ExecuteMacro(macro);
@@ -134,10 +213,7 @@ class Program
         else
         {
             string[] parts = receivedData.Split(':', 2);
-
-            if (parts.Length == 2 &&
-                parts[0] == "MACROPAD" &&
-                parts[1] == deviceId)
+            if (parts.Length == 2 && parts[0] == "MACROPAD" && parts[1] == deviceId)
             {
                 Console.WriteLine($"- Identity reply received from {deviceId}.");
             }
@@ -148,29 +224,17 @@ class Program
         }
     }
 
-    /// <summary>
-    /// Checks whether any mapping uses the supplied device ID.
-    /// </summary>
-    /// <param name="definedMacros">The current mappings, containing no null records.</param>
-    /// <param name="deviceId">The ID to compare exactly, including case and spaces.</param>
-    /// <returns>True if at least one mapping belongs to the device.</returns>
-    /// <remarks>
-    /// Does not verify that all five buttons have usable actions. The current loop scans the entire array.
-    /// </remarks>
+    /// <summary>Checks whether any mapping belongs to a device, stopping at the first match.</summary>
+    /// <param name="definedMacros">The validated macro array.</param>
+    /// <param name="deviceId">The device ID to match exactly.</param>
+    /// <returns>True if a mapping exists; this does not mean all actions are configured.</returns>
     private static bool IsDeviceConfigured(Macro[] definedMacros, string deviceId)
     {
-        bool deviceHasMacros = false;
-        bool stopLoop = false;
-        
-        for (int i = 0; i < definedMacros.Length && !stopLoop; i++)
+        bool found = false;
+        for (int i = 0; i < definedMacros.Length && !found; i++)
         {
-            if (definedMacros[i].ArduinoDeviceId == deviceId)
-            {
-                deviceHasMacros = true;
-                stopLoop = false;
-            }
+            found = definedMacros[i].ArduinoDeviceId == deviceId;
         }
-        
-        return deviceHasMacros;
+        return found;
     }
 }

@@ -1,120 +1,74 @@
-// Description: Writes timestamped messages to the current user’s MacroPad log file.
+// Description: Writes timestamped messages to the current user's MacroPad log file.
 namespace MacroPad_application;
 
 public class Logger
 {
-    private bool _isLogsFileReadable = true;
+    private const int MaximumLogLines = 1000;
 
-    /// <summary>
-    /// Writes a message with a local timestamp and the INFO level.
-    /// </summary>
+    /// <summary>Writes an informational message with a local timestamp.</summary>
     /// <param name="log">The message to record.</param>
-    /// <remarks>
-    /// File-access errors propagate to the caller.
-    /// </remarks>
     public void LogInfo(string log)
     {
-        string timeStamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-        WriteLog($"[{timeStamp}] [INFO] {log}");
+        WriteLog("INFO", log);
     }
 
-    /// <summary>
-    /// Writes a message with a local timestamp and the WARNING level.
-    /// </summary>
+    /// <summary>Writes a warning with a local timestamp.</summary>
     /// <param name="log">The message to record.</param>
-    /// <remarks>
-    /// File-access errors propagate to the caller.
-    /// </remarks>
     public void LogWarning(string log)
     {
-        string timeStamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-        WriteLog($"[{timeStamp}] [WARNING] {log}");
+        WriteLog("WARNING", log);
     }
 
-    /// <summary>
-    /// Writes a message with a local timestamp and the ERROR level.
-    /// </summary>
+    /// <summary>Writes an error with a local timestamp.</summary>
     /// <param name="log">The message to record.</param>
-    /// <remarks>
-    /// File-access errors propagate to the caller.
-    /// </remarks>
     public void LogError(string log)
     {
-        string timeStamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-        WriteLog($"[{timeStamp}] [ERROR] {log}");
+        WriteLog("ERROR", log);
     }
-    
-    /// <summary>
-    /// Creates the current user’s log directory if needed.
-    /// </summary>
-    /// <returns>The path to Library/Logs/MacroPad under the user’s home directory.</returns>
+
+    /// <summary>Creates the current user's log directory if needed.</summary>
+    /// <returns>The path to Library/Logs/MacroPad.</returns>
     private string GetLogsDirectoryPath()
     {
-        string homeDirectory = Environment.GetFolderPath(
-            Environment.SpecialFolder.UserProfile);
-            
+        string homeDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         string logsDirectory = Path.Combine(homeDirectory, "Library", "Logs", "MacroPad");
-            
         Directory.CreateDirectory(logsDirectory);
-            
         return logsDirectory;
     }
-    
-    /// <summary>
-    /// Updates the internal flag by opening the existing log file.
-    /// </summary>
-    /// <param name="logsPath">The log file to check.</param>
-    /// <remarks>
-    /// Requests read/write access. Only a missing file sets the flag false; other access errors propagate.
-    /// </remarks>
-    private void IsLogsFileReadable(string logsPath)
+
+    /// <summary>Writes one entry, restarting the log after 1000 existing lines.</summary>
+    /// <param name="level">The severity label.</param>
+    /// <param name="message">The message to record.</param>
+    /// <remarks>Expected file-access failures fall back to the console rather than interrupting the caller.</remarks>
+    private void WriteLog(string level, string message)
     {
+        string entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{level}] {message}";
+
         try
         {
-            File.Open(logsPath, FileMode.Open).Close();
-            _isLogsFileReadable = true;
-        }
-        catch (FileNotFoundException)
-        {
-            _isLogsFileReadable = false;
-        }
-    }
-    
-    /// <summary>
-    /// Adds a line to logs.txt, creating the file when missing.
-    /// </summary>
-    /// <param name="logs">The formatted log entry to write.</param>
-    /// <remarks>
-    /// Reads and rewrites the whole file for each entry. There is no size limit, rotation,
-    /// concurrent-writer protection or internal console fallback; file-access errors propagate.
-    /// </remarks>
-    private void WriteLog(string logs)
-    {
-        string logPath = Path.Combine(GetLogsDirectoryPath(), "logs.txt");
-        IsLogsFileReadable(logPath);
-
-        if (_isLogsFileReadable)
-        {
-            string[] currentContents = File.ReadAllLines(logPath);
-            string[] newContents = new string[currentContents.Length + 1];
-
-            for (int i = 0; i < currentContents.Length; i++)
+            string logPath = Path.Combine(GetLogsDirectoryPath(), "logs.txt");
+            string[] currentContents;
+            try
             {
-                newContents[i] = currentContents[i];
+                currentContents = File.ReadAllLines(logPath);
             }
-                
-            newContents[newContents.Length - 1] = logs;
-                
-            File.WriteAllLines(logPath, newContents);
-        }
+            catch (FileNotFoundException)
+            {
+                currentContents = [];
+            }
 
-        if (!_isLogsFileReadable)
-        {
-            File.Create(logPath).Close();
-            string[] contents = {logs};
-                
-            File.WriteAllLines(logPath, contents);
+            if (currentContents.Length >= MaximumLogLines)
+            {
+                File.WriteAllText(logPath, entry + Environment.NewLine);
+            }
+            else
+            {
+                File.AppendAllText(logPath, entry + Environment.NewLine);
+            }
         }
-            
+        catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException)
+        {
+            Console.WriteLine($"{entry} (Could not write log: {exception.Message})");
+        }
     }
 }
